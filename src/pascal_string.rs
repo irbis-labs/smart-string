@@ -1,8 +1,11 @@
 use std::borrow::Borrow;
+use std::borrow::Cow;
 use std::cmp;
 use std::fmt;
 use std::ops;
+use std::rc::Rc;
 use std::str::from_utf8_unchecked;
+use std::sync::Arc;
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -129,12 +132,49 @@ impl<const CAPACITY: usize> Default for PascalString<CAPACITY> {
     }
 }
 
-impl<T: ops::Deref<Target = str>, const CAPACITY: usize> PartialEq<T> for PascalString<CAPACITY> {
+impl<T: ops::Deref<Target = str> + ?Sized, const CAPACITY: usize> PartialEq<T>
+    for PascalString<CAPACITY>
+{
     #[inline(always)]
     fn eq(&self, other: &T) -> bool {
         self.as_str().eq(other.deref())
     }
 }
+
+macro_rules! impl_reverse_eq_for_str_types {
+    ($($t:ty),*) => {
+        $(
+            impl<const CAPACITY: usize> PartialEq<PascalString<CAPACITY>> for $t {
+                #[inline(always)]
+                fn eq(&self, other: &PascalString<CAPACITY>) -> bool {
+                    let a: &str = self.as_ref();
+                    let b = other.as_str();
+                    a.eq(b)
+                }
+            }
+
+            impl<const CAPACITY: usize> PartialEq<PascalString<CAPACITY>> for &$t {
+                #[inline(always)]
+                fn eq(&self, other: &PascalString<CAPACITY>) -> bool {
+                    let a: &str = self.as_ref();
+                    let b = other.as_str();
+                    a.eq(b)
+                }
+            }
+
+            impl<const CAPACITY: usize> PartialEq<PascalString<CAPACITY>> for &mut $t {
+                #[inline(always)]
+                fn eq(&self, other: &PascalString<CAPACITY>) -> bool {
+                    let a: &str = self.as_ref();
+                    let b = other.as_str();
+                    a.eq(b)
+                }
+            }
+        )*
+    };
+}
+
+impl_reverse_eq_for_str_types!(String, str, Cow<'_, str>, Box<str>, Rc<str>, Arc<str>);
 
 impl<const CAPACITY: usize> Eq for PascalString<CAPACITY> {}
 

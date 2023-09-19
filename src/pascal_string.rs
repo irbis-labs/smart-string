@@ -58,6 +58,11 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline(always)]
+    pub const fn capacity(&self) -> usize {
+        CAPACITY
+    }
+
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.len as usize
     }
@@ -80,7 +85,7 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline]
-    fn try_push_str(&mut self, string: &str) -> Result<(), ()> {
+    pub fn try_push_str(&mut self, string: &str) -> Result<(), ()> {
         let len = self.len();
         let new_len = len + string.len();
 
@@ -96,7 +101,7 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
 
     /// Returns the remainder of the string that was not pushed.
     #[inline]
-    fn push_str_truncated<'s>(&mut self, string: &'s str) -> &'s str {
+    pub fn push_str_truncated<'s>(&mut self, string: &'s str) -> &'s str {
         if self.try_push_str(string).is_ok() {
             return "";
         }

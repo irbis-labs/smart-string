@@ -1,8 +1,27 @@
 [package]
 name = "smart-string"
 version = "0.1.1"
+license = "MIT/Apache-2.0"
+
+authors = ["Alexander Irbis <irbis.labs@gmail.com>"]
+description = "A collection of string types and traits designed for enhanced string manipulation."
+keywords = ["string", "inline", "display", "no-heap", "optimization"]
+categories = [
+    "data-structures",
+#    "no-std",
+    "rust-patterns",
+]
+
+readme = "README.md"
+homepage = "https://github.com/irbis-labs/smart-string"
+repository = "https://github.com/irbis-labs/smart-string"
+documentation = "https://docs.rs/smart-string/"
+
 edition = "2021"
-publish = false
+
+[badges]
+#travis-ci = { repository = "irbis-labs/smart-string" }
+#coveralls = { repository = "irbis-labs/smart-string" }
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -10,11 +10,16 @@ use std::string::FromUtf16Error;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
 
+use crate::pascal_string;
 use crate::DisplayExt;
 use crate::PascalString;
 
-const DEFAULT_CAPACITY: usize = 30;
+#[cfg(feature = "serde")]
+mod with_serde;
 
+pub const DEFAULT_CAPACITY: usize = 30;
+
+#[derive(Clone)]
 pub enum SmartString<const N: usize = DEFAULT_CAPACITY> {
     Heap(String),
     Stack(PascalString<N>),
@@ -104,7 +109,7 @@ impl<const N: usize> SmartString<N> {
             Self::Stack(s) => Self::Stack(s),
             Self::Heap(s) => match PascalString::try_from(s.as_str()) {
                 Ok(s) => Self::Stack(s),
-                Err(_) => Self::Heap(s),
+                Err(pascal_string::TryFromStrError::TooLong) => Self::Heap(s),
             },
         }
     }
@@ -115,7 +120,7 @@ impl<const N: usize> SmartString<N> {
             Self::Heap(s) => s.push_str(string),
             Self::Stack(s) => match s.try_push_str(string) {
                 Ok(()) => (),
-                Err(()) => {
+                Err(pascal_string::TryFromStrError::TooLong) => {
                     let mut new = String::with_capacity(s.len() + string.len());
                     new.push_str(s.as_str());
                     new.push_str(string);
@@ -225,7 +230,7 @@ impl<const N: usize> SmartString<N> {
             Self::Heap(s) => s.push(ch),
             Self::Stack(s) => match s.try_push(ch) {
                 Ok(()) => (),
-                Err(()) => {
+                Err(pascal_string::TryFromStrError::TooLong) => {
                     let mut new = String::with_capacity(s.len() + ch.len_utf8());
                     new.push_str(s.as_str());
                     new.push(ch);
@@ -248,6 +253,14 @@ impl<const N: usize> SmartString<N> {
         match self {
             Self::Heap(s) => s.pop(),
             Self::Stack(s) => s.pop(),
+        }
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        match self {
+            Self::Heap(s) => s.clear(),
+            Self::Stack(s) => s.clear(),
         }
     }
 }
@@ -339,7 +352,7 @@ impl<const N: usize> Ord for SmartString<N> {
     }
 }
 
-impl<const CAPACITY: usize> Hash for SmartString<CAPACITY> {
+impl<const N: usize> Hash for SmartString<N> {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.as_str().hash(state)
@@ -368,7 +381,7 @@ impl<const N: usize> fmt::Display for SmartString<N> {
     }
 }
 
-// -- Conversions ----------------------------------------------------------------------------------
+// -- Reference ------------------------------------------------------------------------------------
 
 impl<const N: usize> ops::Deref for SmartString<N> {
     type Target = str;
@@ -413,6 +426,8 @@ impl<const N: usize> AsRef<[u8]> for SmartString<N> {
     }
 }
 
+// -- Conversion -----------------------------------------------------------------------------------
+
 impl<const N: usize> From<String> for SmartString<N> {
     #[inline]
     fn from(s: String) -> Self {
@@ -425,7 +440,7 @@ impl<const M: usize, const N: usize> From<PascalString<M>> for SmartString<N> {
     fn from(s: PascalString<M>) -> Self {
         PascalString::try_from(s.as_str())
             .map(Self::Stack)
-            .unwrap_or_else(|()| Self::Heap(s.to_string()))
+            .unwrap_or_else(|pascal_string::TryFromStrError::TooLong| Self::Heap(s.to_string()))
     }
 }
 
@@ -434,7 +449,14 @@ impl<const N: usize> From<&str> for SmartString<N> {
     fn from(s: &str) -> Self {
         PascalString::try_from(s)
             .map(Self::Stack)
-            .unwrap_or_else(|()| Self::Heap(String::from(s)))
+            .unwrap_or_else(|pascal_string::TryFromStrError::TooLong| Self::Heap(String::from(s)))
+    }
+}
+
+impl<const N: usize> From<&mut str> for SmartString<N> {
+    #[inline]
+    fn from(s: &mut str) -> Self {
+        Self::from(&*s)
     }
 }
 
@@ -448,12 +470,46 @@ impl<const N: usize> From<Cow<'_, str>> for SmartString<N> {
     }
 }
 
+impl<const N: usize> FromIterator<char> for SmartString<N> {
+    fn from_iter<T: IntoIterator<Item = char>>(iter: T) -> Self {
+        let mut s = Self::new();
+        // TODO s.extend(iter);
+        for ch in iter {
+            s.push(ch);
+        }
+        s
+    }
+}
+
+impl<'a, const N: usize> FromIterator<&'a str> for SmartString<N> {
+    fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
+        let mut s = Self::new();
+        // TODO s.extend(iter);
+        for string in iter {
+            s.push_str(string);
+        }
+        s
+    }
+}
+
 // -- IO -------------------------------------------------------------------------------------------
 
 impl<const N: usize> fmt::Write for SmartString<N> {
     #[inline]
     fn write_str(&mut self, s: &str) -> fmt::Result {
         Ok(self.push_str(s))
+    }
+}
+
+// -- ops ------------------------------------------------------------------------------------------
+
+impl<const N: usize, T: ops::Deref<Target = str>> ops::Add<T> for SmartString<N> {
+    type Output = Self;
+
+    #[inline]
+    fn add(mut self, rhs: T) -> Self::Output {
+        self.push_str(&*rhs);
+        self
     }
 }
 

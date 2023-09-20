@@ -12,6 +12,13 @@ use std::sync::Arc;
 
 use crate::DisplayExt;
 
+mod error;
+#[cfg(feature = "serde")]
+mod with_serde;
+
+pub use error::TryFromBytesError;
+pub use error::TryFromStrError;
+
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct PascalString<const CAPACITY: usize> {
@@ -88,12 +95,12 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline]
-    pub fn try_push_str(&mut self, string: &str) -> Result<(), ()> {
+    pub fn try_push_str(&mut self, string: &str) -> Result<(), TryFromStrError> {
         let len = self.len();
         let new_len = len + string.len();
 
         if new_len > CAPACITY {
-            return Err(());
+            return Err(TryFromStrError::TooLong);
         }
 
         self.data[len..new_len].copy_from_slice(string.as_bytes());
@@ -103,7 +110,7 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline]
-    pub fn try_push(&mut self, ch: char) -> Result<(), ()> {
+    pub fn try_push(&mut self, ch: char) -> Result<(), TryFromStrError> {
         // TODO special case for ch.len_utf8() == 1
         self.try_push_str(ch.encode_utf8(&mut [0; 4]))
     }
@@ -148,6 +155,11 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
         let newlen = self.len() - ch.len_utf8();
         self.len = newlen as u8;
         Some(ch)
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.len = 0;
     }
 }
 
@@ -248,7 +260,7 @@ impl<const CAPACITY: usize> fmt::Display for PascalString<CAPACITY> {
     }
 }
 
-// -- Conversions ----------------------------------------------------------------------------------
+// -- Reference ------------------------------------------------------------------------------------
 
 impl<const CAPACITY: usize> ops::Deref for PascalString<CAPACITY> {
     type Target = str;
@@ -294,8 +306,31 @@ impl<const CAPACITY: usize> AsRef<[u8]> for PascalString<CAPACITY> {
     }
 }
 
+// -- Conversion -----------------------------------------------------------------------------------
+
+impl<'a, const CAPACITY: usize> TryFrom<&'a [u8]> for PascalString<CAPACITY> {
+    type Error = TryFromBytesError;
+
+    #[inline]
+    fn try_from(bytes: &'a [u8]) -> Result<PascalString<CAPACITY>, Self::Error> {
+        let _ = Self::CAPACITY;
+
+        let string = core::str::from_utf8(bytes)?;
+        Ok(Self::try_from(string)?)
+    }
+}
+
+impl<'a, const CAPACITY: usize> TryFrom<&'a mut str> for PascalString<CAPACITY> {
+    type Error = TryFromStrError;
+
+    #[inline]
+    fn try_from(value: &'a mut str) -> Result<PascalString<CAPACITY>, Self::Error> {
+        Self::try_from(&*value)
+    }
+}
+
 impl<'a, const CAPACITY: usize> TryFrom<&'a str> for PascalString<CAPACITY> {
-    type Error = ();
+    type Error = TryFromStrError;
 
     #[inline]
     fn try_from(value: &'a str) -> Result<PascalString<CAPACITY>, Self::Error> {
@@ -305,7 +340,7 @@ impl<'a, const CAPACITY: usize> TryFrom<&'a str> for PascalString<CAPACITY> {
         let len = bytes.len();
 
         if len > CAPACITY {
-            return Err(());
+            return Err(TryFromStrError::TooLong);
         }
 
         let data = match <[u8; CAPACITY]>::try_from(bytes).ok() {
@@ -324,13 +359,13 @@ impl<'a, const CAPACITY: usize> TryFrom<&'a str> for PascalString<CAPACITY> {
 }
 
 impl<const CAPACITY: usize> TryFrom<char> for PascalString<CAPACITY> {
-    type Error = ();
+    type Error = TryFromStrError;
 
     #[inline]
     fn try_from(value: char) -> Result<PascalString<CAPACITY>, Self::Error> {
         let _ = Self::CAPACITY;
 
-        PascalString::try_from(value.encode_utf8(&mut [0; 4]).as_ref())
+        Self::try_from(value.encode_utf8(&mut [0; 4]))
     }
 }
 

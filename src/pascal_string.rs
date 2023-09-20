@@ -2,10 +2,15 @@ use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::cmp;
 use std::fmt;
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::ops;
 use std::rc::Rc;
 use std::str::from_utf8_unchecked;
+use std::str::from_utf8_unchecked_mut;
 use std::sync::Arc;
+
+use crate::DisplayExt;
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -24,7 +29,7 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     };
 
     #[inline(always)]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         // This line triggers a compile time error, if CAPACITY > 255.
         // TODO look for a better way to assert CAPACITY.
         let _ = Self::CAPACITY;
@@ -73,15 +78,13 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline(always)]
-    pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: PascalString maintains its length invariant.
-        unsafe { self.data.get_unchecked(..self.len()) }
+    pub fn as_str(&self) -> &str {
+        self
     }
 
     #[inline(always)]
-    pub fn as_str(&self) -> &str {
-        // SAFETY: PascalString maintains its utf8 invariant.
-        unsafe { from_utf8_unchecked(self.as_bytes()) }
+    pub fn as_str_mut(&mut self) -> &str {
+        self
     }
 
     #[inline]
@@ -97,6 +100,12 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
         self.len = new_len as u8;
 
         Ok(())
+    }
+
+    #[inline]
+    pub fn try_push(&mut self, ch: char) -> Result<(), ()> {
+        // TODO special case for ch.len_utf8() == 1
+        self.try_push_str(ch.encode_utf8(&mut [0; 4]))
     }
 
     /// Returns the remainder of the string that was not pushed.
@@ -123,6 +132,22 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
         self.try_push_str(substring).unwrap();
 
         remainder
+    }
+
+    #[inline]
+    pub fn truncate(&mut self, new_len: usize) {
+        if new_len <= self.len() {
+            assert!(self.is_char_boundary(new_len));
+            self.len = new_len as u8;
+        }
+    }
+
+    #[inline]
+    pub fn pop(&mut self) -> Option<char> {
+        let ch = self.chars().rev().next()?;
+        let newlen = self.len() - ch.len_utf8();
+        self.len = newlen as u8;
+        Some(ch)
     }
 }
 
@@ -197,12 +222,22 @@ impl<const CAPACITY: usize> Ord for PascalString<CAPACITY> {
     }
 }
 
+impl<const CAPACITY: usize> Hash for PascalString<CAPACITY> {
+    #[inline(always)]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state)
+    }
+}
+
 // -- Formatting -----------------------------------------------------------------------------------
 
 impl<const CAPACITY: usize> fmt::Debug for PascalString<CAPACITY> {
     #[inline(always)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("PascalString").field(&self.as_str()).finish()
+        let name: PascalString<39> = format_args!("PascalString<{CAPACITY}>")
+            .try_to_fmt()
+            .unwrap_or_else(|_| "PascalString<?>".to_fmt());
+        f.debug_tuple(&name).field(&self.as_str()).finish()
     }
 }
 
@@ -220,7 +255,21 @@ impl<const CAPACITY: usize> ops::Deref for PascalString<CAPACITY> {
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.as_str()
+        // SAFETY: PascalString maintains its length invariant.
+        let bytes = unsafe { self.data.get_unchecked(..self.len()) };
+        // SAFETY: PascalString maintains its utf8 invariant.
+        unsafe { from_utf8_unchecked(bytes) }
+    }
+}
+
+impl<const CAPACITY: usize> ops::DerefMut for PascalString<CAPACITY> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let len = self.len();
+        // SAFETY: PascalString maintains its length invariant.
+        let bytes = unsafe { self.data.get_unchecked_mut(..len) };
+        // SAFETY: PascalString maintains its utf8 invariant.
+        unsafe { from_utf8_unchecked_mut(bytes) }
     }
 }
 

@@ -47,7 +47,7 @@ impl<T: fmt::Display> fmt::Display for UnescapeFormatter<T> {
         // Buffer to process character sequences at the edges of &str 
         // from the underlying formatter.
         let mut buf = PascalString::<5>::new();
-        self.0.format_with(&mut buf, |optional_str| {
+        self.0.format_with(|optional_str| {
             if let Some(s) = optional_str {
                 // Process the stream of characters in s, including the handling of any unfinished escape sequences.
                 // If s ends with an incomplete escaped sequence, store it in the buffer and delay writing it.

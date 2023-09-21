@@ -35,6 +35,10 @@ pub trait DisplayExt {
         self.try_to_bytes()
             .unwrap_or_else(|_writer| panic!("Failed to write to target"))
     }
+
+    fn format_with<F>(&self, f: F) -> fmt::Result
+    where
+        F: FnMut(Option<&str>) -> fmt::Result;
 }
 
 impl<T> DisplayExt for T
@@ -53,6 +57,29 @@ where
         writer
             .write_fmt(format_args!("{}", self))
             .map_err(|_| fmt::Error)
+    }
+
+    #[inline]
+    fn format_with<F>(&self, mut cb: F) -> fmt::Result
+    where
+        F: FnMut(Option<&str>) -> fmt::Result,
+    {
+        use fmt::Write;
+
+        struct CallbackWrapper<F>(F);
+
+        impl<F> Write for CallbackWrapper<F>
+        where
+            F: FnMut(Option<&str>) -> fmt::Result,
+        {
+            #[inline]
+            fn write_str(&mut self, s: &str) -> fmt::Result {
+                (self.0)(Some(s))
+            }
+        }
+
+        CallbackWrapper(&mut cb).write_fmt(format_args!("{}", self))?;
+        (cb)(None)
     }
 }
 

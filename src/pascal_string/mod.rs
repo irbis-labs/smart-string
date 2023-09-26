@@ -47,7 +47,31 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
         }
     }
 
-    /// Creates a new `PascalString<CAPACITY>` from a `&str`.
+    /// Creates a new `PascalString<CAPACITY>` instance from a `&str` within a const context.
+    /// This implementation prioritizes const context compatibility over performance.
+    /// If a const context is not required, use `try_from` for better performance.
+    /// In the future, once const in trait methods is stabilized, this method will be deprecated
+    /// in favor of `try_from`.
+    pub const fn try_from_str_const(string: &str) -> Option<Self> {
+        let _ = Self::CAPACITY;
+
+        if string.len() > CAPACITY {
+            return None;
+        }
+        let mut this = PascalString {
+            len: string.len() as u8,
+            data: [0; CAPACITY],
+        };
+        let bytes = string.as_bytes();
+        let mut i = 0;
+        while i < string.len() {
+            this.data[i] = bytes[i];
+            i += 1;
+        }
+        Some(this)
+    }
+
+    /// Creates a new `PascalString<CAPACITY>` instance from a `&str`.
     /// If the length of the string exceeds `CAPACITY`,
     /// the string is truncated at the nearest valid UTF-8 boundary
     /// to ensure its length does not exceed `CAPACITY`.
@@ -65,7 +89,7 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline(always)]
-    pub fn into_inner(self) -> (u8, [u8; CAPACITY]) {
+    pub const fn into_inner(self) -> (u8, [u8; CAPACITY]) {
         (self.len, self.data)
     }
 
@@ -75,12 +99,12 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len as usize
     }
 
     #[inline(always)]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 

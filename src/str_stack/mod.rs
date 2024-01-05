@@ -1,6 +1,8 @@
 use std::str::from_utf8_unchecked;
 
 mod iter;
+#[cfg(feature = "serde")]
+mod with_serde;
 
 pub use iter::StrStackIter;
 
@@ -87,6 +89,12 @@ impl StrStack {
     pub fn push(&mut self, s: &str) {
         self.data.extend_from_slice(s.as_bytes());
         self.ends.push(self.data.len());
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        self.data.clear();
+        self.ends.clear();
     }
 
     #[inline]

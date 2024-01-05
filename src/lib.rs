@@ -7,3 +7,4 @@ pub use display_ext::DisplayExt;
 pub use pascal_string::PascalString;
 pub use smart_string::SmartString;
 pub use str_stack::StrStack;
+pub use str_stack::StrStackIter;

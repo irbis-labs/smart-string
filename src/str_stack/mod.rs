@@ -1,5 +1,9 @@
 use std::str::from_utf8_unchecked;
 
+mod iter;
+
+pub use iter::StrStackIter;
+
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct StrStack {
     data: Vec<u8>,
@@ -29,9 +33,14 @@ impl StrStack {
 
     #[inline]
     pub fn get(&self, index: usize) -> Option<&str> {
-        let (start, end) = self.get_bounds(index)?;
-        let slice = unsafe { self.data.get_unchecked(start..end) };
-        Some(unsafe { from_utf8_unchecked(slice) })
+        let (begin, end) = self.get_bounds(index)?;
+        Some(unsafe { self.get_unchecked(begin, end) })
+    }
+
+    #[inline]
+    pub unsafe fn get_unchecked(&self, begin: usize, end: usize) -> &str {
+        let slice = unsafe { self.data.get_unchecked(begin..end) };
+        unsafe { from_utf8_unchecked(slice) }
     }
 
     #[inline]
@@ -78,6 +87,11 @@ impl StrStack {
     pub fn push(&mut self, s: &str) {
         self.data.extend_from_slice(s.as_bytes());
         self.ends.push(self.data.len());
+    }
+
+    #[inline]
+    pub fn iter(&self) -> StrStackIter {
+        StrStackIter::new(self)
     }
 }
 
@@ -190,5 +204,21 @@ mod tests {
         assert!(stack.get_bounds(0).is_none());
 
         assert!(stack.pop_owned::<Box<str>>().is_none());
+    }
+
+    #[test]
+    fn test_iter() {
+        let mut stack = StrStack::new();
+
+        stack.push("123");
+        stack.push("456");
+        stack.push("789");
+
+        let mut iter = stack.iter();
+        assert_eq!(iter.next(), Some("123"));
+        assert_eq!(iter.next(), Some("456"));
+        assert_eq!(iter.next(), Some("789"));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
     }
 }

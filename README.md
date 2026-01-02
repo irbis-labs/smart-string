@@ -85,6 +85,31 @@ real workloads (e.g. shorten → re-grow).
 
 If you want to attempt a demotion, call `try_into_stack`. If you want to force heap storage, call `into_heap`.
 
+## Safety & invariants (unsafe code)
+
+This crate uses `unsafe` in a few carefully-scoped places to avoid repeated UTF‑8 validation and bounds checks when
+projecting internal byte buffers as `&str` / `&mut str`.
+
+The key invariants are:
+
+- **`PascalString`**: `len <= CAPACITY` and `data[..len]` is always valid UTF‑8.
+- **`StrStack`**: `data` is always valid UTF‑8 and `ends` entries are valid segment boundaries within `data`.
+
+Policy: every `unsafe { ... }` block must have a local `// SAFETY:` comment explaining what invariant makes it sound, and
+tests must cover UTF‑8 boundary and capacity edge cases.
+
+## Compatibility with `std::String`
+
+`SmartString` aims to be a pragmatic, mostly drop-in alternative to `String`:
+
+- It supports common `String`-like APIs and traits.
+- Some mutation APIs currently **promote to heap and delegate** (trading stack retention for simpler, correct semantics).
+
+For a living checklist of what’s implemented vs planned, see `API-PARITY.md`.
+
+Note on `PascalString`: it is fixed-capacity; for `String`-like “infallible” ergonomics it provides `push` / `push_str`
+which **panic on overflow** (use `try_push` / `try_push_str` for fallible behavior).
+
 ## License
 
 Licensed under either of

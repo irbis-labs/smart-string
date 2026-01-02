@@ -1,6 +1,8 @@
 use std::borrow::Borrow;
+use std::borrow::BorrowMut;
 use std::borrow::Cow;
 use std::cmp;
+use std::convert::Infallible;
 use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -36,6 +38,17 @@ pub enum SmartString<const N: usize = DEFAULT_CAPACITY> {
 }
 
 impl<const N: usize> SmartString<N> {
+    #[inline]
+    fn ensure_heap_mut(&mut self) -> &mut String {
+        if let Self::Stack(s) = self {
+            *self = Self::Heap(s.to_string());
+        }
+        match self {
+            Self::Heap(s) => s,
+            Self::Stack(_) => unreachable!("just promoted to heap"),
+        }
+    }
+
     #[inline]
     #[must_use]
     pub const fn new() -> Self {
@@ -82,6 +95,18 @@ impl<const N: usize> SmartString<N> {
     #[must_use]
     pub fn as_str(&self) -> &str {
         self
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.as_str().len()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.as_str().is_empty()
     }
 
     #[inline]
@@ -265,6 +290,65 @@ impl<const N: usize> SmartString<N> {
             Self::Stack(s) => s.clear(),
         }
     }
+
+    // --- String-like APIs that require heap delegation -------------------------------------------
+
+    #[inline]
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.into()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.into_string().into_bytes()
+    }
+
+    #[inline]
+    pub fn insert(&mut self, idx: usize, ch: char) {
+        self.ensure_heap_mut().insert(idx, ch);
+    }
+
+    #[inline]
+    pub fn insert_str(&mut self, idx: usize, string: &str) {
+        self.ensure_heap_mut().insert_str(idx, string);
+    }
+
+    #[inline]
+    pub fn remove(&mut self, idx: usize) -> char {
+        self.ensure_heap_mut().remove(idx)
+    }
+
+    #[inline]
+    pub fn retain<F>(&mut self, f: F)
+    where
+        F: FnMut(char) -> bool,
+    {
+        self.ensure_heap_mut().retain(f);
+    }
+
+    #[inline]
+    pub fn drain<R>(&mut self, range: R) -> std::string::Drain<'_>
+    where
+        R: std::ops::RangeBounds<usize>,
+    {
+        self.ensure_heap_mut().drain(range)
+    }
+
+    #[inline]
+    pub fn split_off(&mut self, at: usize) -> Self {
+        let other = self.ensure_heap_mut().split_off(at);
+        SmartString::from(other).try_into_stack()
+    }
+
+    #[inline]
+    pub fn replace_range<R>(&mut self, range: R, replace_with: &str)
+    where
+        R: std::ops::RangeBounds<usize>,
+    {
+        self.ensure_heap_mut().replace_range(range, replace_with);
+    }
 }
 
 // -- Common traits --------------------------------------------------------------------------------
@@ -428,12 +512,45 @@ impl<const N: usize> AsRef<[u8]> for SmartString<N> {
     }
 }
 
+impl<const N: usize> AsMut<str> for SmartString<N> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut str {
+        self
+    }
+}
+
+impl<const N: usize> BorrowMut<str> for SmartString<N> {
+    #[inline(always)]
+    fn borrow_mut(&mut self) -> &mut str {
+        self
+    }
+}
+
 // -- Conversion -----------------------------------------------------------------------------------
 
 impl<const N: usize> From<String> for SmartString<N> {
     #[inline]
     fn from(s: String) -> Self {
         Self::Heap(s)
+    }
+}
+
+impl<const N: usize> From<SmartString<N>> for String {
+    #[inline]
+    fn from(s: SmartString<N>) -> Self {
+        match s {
+            SmartString::Heap(s) => s,
+            SmartString::Stack(s) => s.to_string(),
+        }
+    }
+}
+
+impl<const N: usize> std::str::FromStr for SmartString<N> {
+    type Err = Infallible;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(s))
     }
 }
 
@@ -455,10 +572,38 @@ impl<const N: usize> From<&str> for SmartString<N> {
     }
 }
 
+impl<const N: usize> From<&String> for SmartString<N> {
+    #[inline]
+    fn from(s: &String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
 impl<const N: usize> From<&mut str> for SmartString<N> {
     #[inline]
     fn from(s: &mut str) -> Self {
         Self::from(&*s)
+    }
+}
+
+impl<const N: usize> From<Box<str>> for SmartString<N> {
+    #[inline]
+    fn from(s: Box<str>) -> Self {
+        Self::from(s.as_ref())
+    }
+}
+
+impl<const N: usize> From<Rc<str>> for SmartString<N> {
+    #[inline]
+    fn from(s: Rc<str>) -> Self {
+        Self::from(s.as_ref())
+    }
+}
+
+impl<const N: usize> From<Arc<str>> for SmartString<N> {
+    #[inline]
+    fn from(s: Arc<str>) -> Self {
+        Self::from(s.as_ref())
     }
 }
 
@@ -475,10 +620,7 @@ impl<const N: usize> From<Cow<'_, str>> for SmartString<N> {
 impl<const N: usize> FromIterator<char> for SmartString<N> {
     fn from_iter<T: IntoIterator<Item = char>>(iter: T) -> Self {
         let mut s = Self::new();
-        // TODO s.extend(iter);
-        for ch in iter {
-            s.push(ch);
-        }
+        s.extend(iter);
         s
     }
 }
@@ -486,11 +628,53 @@ impl<const N: usize> FromIterator<char> for SmartString<N> {
 impl<'a, const N: usize> FromIterator<&'a str> for SmartString<N> {
     fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
         let mut s = Self::new();
-        // TODO s.extend(iter);
-        for string in iter {
-            s.push_str(string);
-        }
+        s.extend(iter);
         s
+    }
+}
+
+impl<const N: usize> Extend<char> for SmartString<N> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = char>>(&mut self, iter: T) {
+        for ch in iter {
+            self.push(ch);
+        }
+    }
+}
+
+impl<'a, const N: usize> Extend<&'a str> for SmartString<N> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = &'a str>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(s);
+        }
+    }
+}
+
+impl<'a, const N: usize> Extend<&'a char> for SmartString<N> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = &'a char>>(&mut self, iter: T) {
+        for ch in iter {
+            self.push(*ch);
+        }
+    }
+}
+
+impl<const N: usize> Extend<String> for SmartString<N> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = String>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(&s);
+        }
+    }
+}
+
+impl<'a, const N: usize> Extend<&'a String> for SmartString<N> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = &'a String>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(s.as_str());
+        }
     }
 }
 
@@ -513,6 +697,13 @@ impl<const N: usize, T: ops::Deref<Target = str>> ops::Add<T> for SmartString<N>
     fn add(mut self, rhs: T) -> Self::Output {
         self.push_str(&rhs);
         self
+    }
+}
+
+impl<const N: usize, T: ops::Deref<Target = str>> ops::AddAssign<T> for SmartString<N> {
+    #[inline]
+    fn add_assign(&mut self, rhs: T) {
+        self.push_str(rhs.deref());
     }
 }
 
@@ -690,5 +881,104 @@ mod tests {
         s.try_reserve_exact(3).unwrap();
         assert!(s.is_heap());
         assert_eq!(s.as_str(), "ab");
+    }
+
+    #[test]
+    fn test_extend_str_transitions_stack_to_heap() {
+        let mut s = SmartString::<4>::new();
+        s.extend(["ab", "cd"]);
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "abcd");
+
+        s.extend(["e"]);
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "abcde");
+    }
+
+    #[test]
+    fn test_extend_char_unicode_boundaries() {
+        let mut s = SmartString::<4>::new();
+        s.extend(['€', 'a']); // 3 + 1 bytes
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "€a");
+
+        s.extend(['b']);
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "€ab");
+    }
+
+    #[test]
+    fn test_add_assign() {
+        let mut s = SmartString::<4>::from("a");
+        s += "bcd";
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "abcd");
+
+        s += "e";
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "abcde");
+    }
+
+    #[test]
+    fn test_insert_and_remove_promotes_to_heap() {
+        let mut s = SmartString::<8>::from("ab");
+        assert!(s.is_stack());
+
+        s.insert(1, '€');
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "a€b");
+
+        let removed = s.remove(1);
+        assert_eq!(removed, '€');
+        assert_eq!(s.as_str(), "ab");
+    }
+
+    #[test]
+    fn test_split_off_returns_stack_when_possible() {
+        let mut s = SmartString::<8>::from("hello!");
+        assert!(s.is_stack());
+
+        let other = s.split_off(5);
+        assert_eq!(s.as_str(), "hello");
+        assert_eq!(other.as_str(), "!");
+        assert!(other.is_stack());
+    }
+
+    #[test]
+    fn test_replace_range() {
+        let mut s = SmartString::<8>::from("ab");
+        s.replace_range(1..1, "cd");
+        assert_eq!(s.as_str(), "acdb");
+    }
+
+    #[test]
+    fn test_len_and_is_empty() {
+        let s = SmartString::<4>::new();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+
+        let s = SmartString::<4>::from("ab");
+        assert!(!s.is_empty());
+        assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn test_from_string_refs_and_smart_extend_refs() {
+        let base = String::from("ab");
+        let s = SmartString::<4>::from(&base);
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "ab");
+
+        let mut s = SmartString::<4>::new();
+        let euro = '€';
+        let a = 'a';
+        s.extend([&euro, &a]);
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "€a");
+
+        let b = String::from("b");
+        s.extend([&b]);
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "€ab");
     }
 }

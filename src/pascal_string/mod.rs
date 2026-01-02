@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::borrow::BorrowMut;
 use std::borrow::Cow;
 use std::cmp;
 use std::fmt;
@@ -114,6 +115,12 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline(always)]
+    pub fn as_mut_str(&mut self) -> &mut str {
+        self
+    }
+
+    #[inline(always)]
+    #[deprecated(note = "Use `as_mut_str()` (this method name suggests `&mut str` but returns `&str`).")]
     pub fn as_str_mut(&mut self) -> &str {
         self
     }
@@ -137,6 +144,23 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     pub fn try_push(&mut self, ch: char) -> Result<(), TryFromStrError> {
         // TODO special case for ch.len_utf8() == 1
         self.try_push_str(ch.encode_utf8(&mut [0; 4]))
+    }
+
+    /// Appends a string slice, panicking if the capacity would be exceeded.
+    ///
+    /// This mirrors `String::push_str`’s “cannot fail” ergonomics; use `try_push_str` if you want a recoverable error.
+    #[inline]
+    pub fn push_str(&mut self, string: &str) {
+        self.try_push_str(string)
+            .expect("PascalString capacity exceeded");
+    }
+
+    /// Appends a character, panicking if the capacity would be exceeded.
+    ///
+    /// This mirrors `String::push`’s “cannot fail” ergonomics; use `try_push` if you want a recoverable error.
+    #[inline]
+    pub fn push(&mut self, ch: char) {
+        self.try_push(ch).expect("PascalString capacity exceeded");
     }
 
     /// Returns the remainder of the string that was not pushed.
@@ -330,6 +354,20 @@ impl<const CAPACITY: usize> AsRef<[u8]> for PascalString<CAPACITY> {
     }
 }
 
+impl<const CAPACITY: usize> AsMut<str> for PascalString<CAPACITY> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut str {
+        self
+    }
+}
+
+impl<const CAPACITY: usize> BorrowMut<str> for PascalString<CAPACITY> {
+    #[inline(always)]
+    fn borrow_mut(&mut self) -> &mut str {
+        self
+    }
+}
+
 // -- Conversion -----------------------------------------------------------------------------------
 
 impl<'a, const CAPACITY: usize> TryFrom<&'a [u8]> for PascalString<CAPACITY> {
@@ -390,6 +428,15 @@ impl<const CAPACITY: usize> TryFrom<char> for PascalString<CAPACITY> {
         let _ = Self::CAPACITY;
 
         Self::try_from(value.encode_utf8(&mut [0; 4]))
+    }
+}
+
+impl<const CAPACITY: usize> std::str::FromStr for PascalString<CAPACITY> {
+    type Err = TryFromStrError;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s)
     }
 }
 
@@ -572,6 +619,22 @@ mod tests {
         assert_eq!(len, 2);
         assert_eq!(&data[..2], b"ab");
         assert_eq!(&data[2..], &[0, 0]);
+    }
+
+    #[test]
+    fn test_as_mut_str_allows_in_place_mutation() {
+        let mut ps = PascalString::<4>::try_from("ab").unwrap();
+        ps.as_mut_str().make_ascii_uppercase();
+        assert_eq!(ps.as_str(), "AB");
+    }
+
+    #[test]
+    fn test_push_str_panics_on_overflow() {
+        let result = std::panic::catch_unwind(|| {
+            let mut ps = PascalString::<4>::new();
+            ps.push_str("abcde");
+        });
+        assert!(result.is_err());
     }
 
     #[test]

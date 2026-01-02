@@ -8,6 +8,18 @@
 //!
 //! - `SmartString` promotion (stack → heap) can happen implicitly during mutation when capacity is exceeded.
 //! - Demotion (heap → stack) is **explicit** and must be requested via [`SmartString::try_into_stack`].
+//!
+//! ## Safety & invariants
+//!
+//! This crate contains a small amount of `unsafe` code used to project internal UTF‑8 byte buffers as `&str` / `&mut str`
+//! without repeated validation and bounds checks.
+//!
+//! Soundness relies on internal invariants:
+//!
+//! - `PascalString`: `len <= CAPACITY` and `data[..len]` is always valid UTF‑8.
+//! - `StrStack`: `data` is always valid UTF‑8 and `ends` stores valid UTF‑8 segment boundaries within `data`.
+//!
+//! See also: `API-PARITY.md` for the “std `String` parity” checklist and compatibility notes.
 //! - MSRV (default features): **Rust 1.59.0**.
 //!   - Motivation: `SmartString`'s public API uses a default const generic parameter
 //!     (`SmartString<const N: usize = DEFAULT_CAPACITY>`), which requires newer compilers.

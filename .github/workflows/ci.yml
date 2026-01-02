@@ -44,4 +44,19 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings
 
+  msrv:
+    name: msrv (rustc 1.59.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.59.0
+      - name: cargo test (stable cargo + MSRV rustc)
+        run: |
+          set -euo pipefail
+          SYSROOT="$(rustc +1.59.0 --print sysroot)"
+          RUSTC="$SYSROOT/bin/rustc" \
+          RUSTDOC="$SYSROOT/bin/rustdoc" \
+          cargo +stable test
+
 

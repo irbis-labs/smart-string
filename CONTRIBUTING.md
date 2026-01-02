@@ -30,7 +30,7 @@ This crate declares MSRV in `Cargo.toml` (`rust-version`). To verify it locally:
 
 ```bash
 rustup toolchain install 1.59.0 --profile minimal
-cargo +1.59.0 test --locked
+cargo +1.59.0 test
 ```
 
 ## Required local test matrix
@@ -38,7 +38,17 @@ cargo +1.59.0 test --locked
 Before opening a PR, validate on both:
 
 - **Latest stable**: `cargo +stable test`
-- **MSRV**: `cargo +1.59.0 test --locked`
+- **MSRV**: `cargo +1.59.0 test`
+
+Note: `Cargo.lock` is intentionally not committed for this library crate. If you want a more CI-like MSRV check
+(newer Cargo resolver + older compiler), you can run:
+
+```bash
+rustup toolchain install 1.59.0 --profile minimal
+RUSTC="$(rustc +1.59.0 --print sysroot)/bin/rustc" \
+RUSTDOC="$(rustc +1.59.0 --print sysroot)/bin/rustdoc" \
+cargo +stable test
+```
 
 ## What to test
 

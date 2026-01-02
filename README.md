@@ -36,6 +36,17 @@ Motivation:
 - Keeping MSRV relatively low matters for library users; if we ever need to bump it, we should document it in release
   notes.
 
+What this guarantees (and what it doesn't):
+
+- **Guaranteed**: `smart-string` itself builds and tests with `rustc 1.59.0`.
+- **Not guaranteed**: that `cargo +1.59.0` will always be able to resolve and build the *latest* dependency graph from
+  crates.io in the future without pinning, because transitive dependencies may raise their own MSRV over time.
+
+In CI we run an MSRV job that compiles with `rustc 1.59.0`. If MSRV breaks due to dependency drift, we either:
+
+- pin direct dependency versions / add upper bounds (policy decision), or
+- bump MSRV (and document it).
+
 ## What's in the box
 
 - [`PascalString<N>`](https://github.com/irbis-labs/smart-string/tree/main/src/pascal_string): A string with a fixed

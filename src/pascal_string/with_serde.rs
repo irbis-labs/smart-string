@@ -101,3 +101,36 @@ impl<'de, const CAPACITY: usize> Deserialize<'de> for PascalString<CAPACITY> {
         deserializer.deserialize_string(StringInPlaceVisitor(place))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_serialize_as_string() {
+        let ps = PascalString::<4>::try_from("abcd").unwrap();
+        let json = serde_json::to_string(&ps).unwrap();
+        assert_eq!(json, r#""abcd""#);
+    }
+
+    #[test]
+    fn test_deserialize_ok_and_too_long_errors() {
+        let ps: PascalString<4> = serde_json::from_str(r#""abcd""#).unwrap();
+        assert_eq!(ps.as_str(), "abcd");
+
+        let err = serde_json::from_str::<PascalString<4>>(r#""abcde""#).unwrap_err();
+        // Keep the assertion loose to avoid coupling to serde's exact wording.
+        assert!(err.to_string().contains("invalid length"));
+    }
+
+    #[test]
+    fn test_deserialize_in_place_overwrites_existing_value() {
+        let mut place = PascalString::<4>::try_from("zzzz").unwrap();
+        assert_eq!(place.as_str(), "zzzz");
+
+        let mut de = serde_json::Deserializer::from_str(r#""ab""#);
+        PascalString::deserialize_in_place(&mut de, &mut place).unwrap();
+
+        assert_eq!(place.as_str(), "ab");
+    }
+}

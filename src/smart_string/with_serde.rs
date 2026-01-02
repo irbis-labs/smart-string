@@ -91,3 +91,54 @@ impl<'de, const CAPACITY: usize> Deserialize<'de> for SmartString<CAPACITY> {
         deserializer.deserialize_string(StringInPlaceVisitor(place))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_serialize_as_string() {
+        let s = SmartString::<4>::from("abcde"); // heap
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(json, r#""abcde""#);
+    }
+
+    #[test]
+    fn test_deserialize_picks_stack_or_heap() {
+        let s: SmartString<4> = serde_json::from_str(r#""abcd""#).unwrap();
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "abcd");
+
+        let s: SmartString<4> = serde_json::from_str(r#""abcde""#).unwrap();
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "abcde");
+    }
+
+    #[test]
+    fn test_deserialize_in_place_overwrites_existing_value() {
+        // Start with a heap value, then overwrite it with a shorter string.
+        //
+        // Note: in-place deserialization overwrites the content but preserves the variant when possible
+        // (clearing an existing `String` keeps it heap-backed).
+        let mut place = SmartString::<4>::from("abcde");
+        assert!(place.is_heap());
+
+        let mut de = serde_json::Deserializer::from_str(r#""ab""#);
+        SmartString::deserialize_in_place(&mut de, &mut place).unwrap();
+
+        assert_eq!(place.as_str(), "ab");
+        assert!(place.is_heap());
+    }
+
+    #[test]
+    fn test_deserialize_in_place_promotes_stack_to_heap_if_needed() {
+        let mut place = SmartString::<4>::from("ab");
+        assert!(place.is_stack());
+
+        let mut de = serde_json::Deserializer::from_str(r#""abcde""#);
+        SmartString::deserialize_in_place(&mut de, &mut place).unwrap();
+
+        assert_eq!(place.as_str(), "abcde");
+        assert!(place.is_heap());
+    }
+}

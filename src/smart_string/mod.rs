@@ -590,6 +590,15 @@ impl<const N: usize> From<&str> for SmartString<N> {
     }
 }
 
+impl<const N: usize> From<char> for SmartString<N> {
+    #[inline]
+    fn from(ch: char) -> Self {
+        let mut s = Self::new();
+        s.push(ch);
+        s
+    }
+}
+
 impl<const N: usize> From<&String> for SmartString<N> {
     #[inline]
     fn from(s: &String) -> Self {
@@ -1020,5 +1029,16 @@ mod tests {
 
         let s = SmartString::<4>::from_utf8_lossy(&[0xff]);
         assert!(matches!(s, Cow::Owned(_)));
+    }
+
+    #[test]
+    fn test_from_char_picks_stack_or_heap() {
+        let s = SmartString::<4>::from('€'); // 3 bytes
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "€");
+
+        let s = SmartString::<2>::from('€'); // won't fit (3 bytes)
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "€");
     }
 }

@@ -26,7 +26,7 @@ sound and its performance intent intact.
   - [x] `Deref<Target=str>`, `DerefMut`
   - [x] `AsRef<str>`, `AsRef<[u8]>`, `Borrow<str>`
   - [x] `AsMut<str>`, `BorrowMut<str>`
-  - [x] `From<&str>`, `From<String>`, `From<Cow<str>>`
+  - [x] `From<&str>`, `From<String>`, `From<char>`, `From<Cow<str>>`
   - [x] `From<&String>`, `From<Box<str>>`, `From<Rc<str>>`, `From<Arc<str>>`
   - [x] `FromStr` (infallible)
   - [x] `FromIterator<char>`, `FromIterator<&str>`

@@ -52,6 +52,17 @@ Some core behavior is covered by unit tests, but coverage is incomplete.
 
 Open to more suggestions!
 
+## SmartString storage semantics (explicit conversions)
+
+`SmartString` may **promote** from stack to heap during mutating operations (e.g. `push_str`, `reserve`) when the stack
+capacity is exceeded.
+
+It does **not** automatically demote from heap to stack when the content becomes shorter (including during
+in-place deserialization). This is intentional: implicit demotion can cause surprising realloc/dealloc churn in
+real workloads (e.g. shorten → re-grow).
+
+If you want to attempt a demotion, call `try_into_stack`. If you want to force heap storage, call `into_heap`.
+
 ## License
 
 Licensed under either of
@@ -82,3 +93,5 @@ cargo check --all-targets
 cargo test
 cargo +stable clippy --all-targets -- -D warnings
 ```
+
+See also: `CONTRIBUTING.md`.

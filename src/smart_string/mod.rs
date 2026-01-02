@@ -19,6 +19,16 @@ mod with_serde;
 
 pub const DEFAULT_CAPACITY: usize = 30;
 
+/// A string that stores short values on the stack and longer values on the heap.
+///
+/// ### Storage semantics (explicit conversions)
+///
+/// This type may **promote** from stack to heap during mutating operations (e.g. `push_str`, `reserve`) when the stack
+/// capacity is exceeded.
+///
+/// It does **not** automatically demote from heap to stack when the contents become shorter (including during
+/// in-place deserialization). This is intentional: implicit demotion can introduce surprising realloc/dealloc churn in
+/// real workloads (e.g. shorten → re-grow). If you want to attempt a demotion, call `try_into_stack`.
 #[derive(Clone)]
 pub enum SmartString<const N: usize = DEFAULT_CAPACITY> {
     Heap(String),

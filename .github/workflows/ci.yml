@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  policy:
+    name: policy (no Cargo.lock)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if Cargo.lock is committed
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -Eq '(^|/)Cargo\.lock$'; then
+            echo "error: Cargo.lock must not be committed in library repositories (it should be gitignored)." >&2
+            exit 1
+          fi
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - name: cargo fmt (check)
+        run: cargo +nightly fmt --all -- --check
+
+  test:
+    name: check / test / clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: cargo check
+        run: cargo check --all-targets
+      - name: cargo test
+        run: cargo test
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+

@@ -19,7 +19,7 @@ Currently, Smart String is in active development, and its API might undergo chan
 tried-and-true patterns from earlier works, the library as a standalone entity is relatively new. Hence, it's advised to
 use it with caution and feel free to provide feedback, report issues, or suggest improvements.
 
-Not yet covered by tests.
+Some core behavior is covered by unit tests, but coverage is incomplete.
 
 ## Features
 
@@ -65,3 +65,20 @@ Licensed under either of
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license,
 shall be dual licensed as above, without any additional terms or conditions.
+
+## Development
+
+Recommended (enable repo hooks once per clone):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Quality gates:
+
+```bash
+cargo +nightly fmt --all -- --check
+cargo check --all-targets
+cargo test
+cargo +stable clippy --all-targets -- -D warnings
+```

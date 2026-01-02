@@ -83,7 +83,8 @@ impl StrStack {
 
     #[inline]
     pub fn remove_top(&mut self) -> Option<()> {
-        let end = self.ends.pop()?;
+        self.ends.pop()?;
+        let end = self.ends.last().copied().unwrap_or(0);
         self.data.truncate(end);
         Some(())
     }
@@ -259,5 +260,26 @@ mod tests {
         assert_eq!(stack.get_bounds(0), Some((0, 3)));
         assert_eq!(stack.get_bounds(1), Some((3, 4)));
         assert_eq!(stack.get_bounds(2), Some((4, 8)));
+    }
+
+    #[test]
+    fn test_unicode_remove_top_truncates_byte_buffer() {
+        let mut stack = StrStack::new();
+        stack.push("€"); // 3 bytes
+        stack.push("😊"); // 4 bytes
+        stack.push("a"); // 1 byte
+
+        assert_eq!(stack.as_str(), "€😊a");
+        assert_eq!(stack.len(), 3);
+
+        stack.remove_top().unwrap();
+        assert_eq!(stack.as_str(), "€😊");
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get_top(), Some("😊"));
+
+        stack.remove_top().unwrap();
+        assert_eq!(stack.as_str(), "€");
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get_top(), Some("€"));
     }
 }

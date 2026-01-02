@@ -639,4 +639,46 @@ mod tests {
         assert!(s.is_heap());
         assert_eq!(s.as_str(), "abc");
     }
+
+    #[test]
+    fn test_truncate_does_not_demote_heap_to_stack() {
+        let mut s = SmartString::<4>::from("abcde");
+        assert!(s.is_heap());
+
+        s.truncate(2);
+        assert_eq!(s.as_str(), "ab");
+        assert!(s.is_heap());
+
+        let s = s.try_into_stack();
+        assert_eq!(s.as_str(), "ab");
+        assert!(s.is_stack());
+    }
+
+    #[rustversion::since(1.57)]
+    #[test]
+    fn test_try_reserve_transitions_stack_to_heap() {
+        let mut s = SmartString::<4>::from("ab");
+        assert!(s.is_stack());
+
+        // Fits within remaining stack capacity.
+        s.try_reserve(2).unwrap();
+        assert!(s.is_stack());
+
+        // Exceeds remaining stack capacity => transition to heap.
+        s.try_reserve(3).unwrap();
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "ab");
+    }
+
+    #[rustversion::since(1.57)]
+    #[test]
+    fn test_try_reserve_exact_transitions_stack_to_heap() {
+        let mut s = SmartString::<4>::from("ab");
+        assert!(s.is_stack());
+
+        // Exceeds remaining stack capacity => transition to heap.
+        s.try_reserve_exact(3).unwrap();
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "ab");
+    }
 }

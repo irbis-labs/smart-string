@@ -536,4 +536,51 @@ mod tests {
             _ => panic!("expected Utf8Error, got: {err:?}"),
         }
     }
+
+    #[test]
+    fn test_try_from_bytes_too_long() {
+        let err = PascalString::<2>::try_from(&b"abc"[..]).unwrap_err();
+        assert_eq!(err, TryFromBytesError::TooLong);
+    }
+
+    #[test]
+    fn test_capacity_zero_behavior() {
+        let mut ps = PascalString::<0>::new();
+        assert_eq!(ps.len(), 0);
+        assert!(ps.is_empty());
+        assert_eq!(ps.as_str(), "");
+
+        assert_eq!(ps.try_push_str(""), Ok(()));
+        assert_eq!(ps.try_push_str("a"), Err(TryFromStrError::TooLong));
+
+        let rem = ps.push_str_truncated("hello");
+        assert_eq!(ps.as_str(), "");
+        assert_eq!(rem, "hello");
+
+        assert_eq!(PascalString::<0>::from_str_truncated("hello").as_str(), "");
+        assert!(PascalString::<0>::try_from("").is_ok());
+        assert_eq!(
+            PascalString::<0>::try_from("a").unwrap_err(),
+            TryFromStrError::TooLong
+        );
+    }
+
+    #[test]
+    fn test_into_inner_invariants() {
+        let ps = PascalString::<4>::try_from("ab").unwrap();
+        let (len, data) = ps.into_inner();
+        assert_eq!(len, 2);
+        assert_eq!(&data[..2], b"ab");
+        assert_eq!(&data[2..], &[0, 0]);
+    }
+
+    #[test]
+    fn test_try_from_str_const() {
+        const PS: Option<PascalString<4>> = PascalString::<4>::try_from_str_const("ab");
+        let ps = PS.unwrap();
+        assert_eq!(ps.as_str(), "ab");
+
+        const TOO_LONG: Option<PascalString<2>> = PascalString::<2>::try_from_str_const("abc");
+        assert!(TOO_LONG.is_none());
+    }
 }

@@ -542,4 +542,91 @@ mod tests {
         assert_eq!(mem::size_of::<SmartString<39>>(), 48);
         assert_eq!(mem::size_of::<SmartString<46>>(), 48);
     }
+
+    #[test]
+    fn test_from_str_picks_stack_or_heap() {
+        let s = SmartString::<4>::from("abcd");
+        assert!(s.is_stack());
+
+        let s = SmartString::<4>::from("abcde");
+        assert!(s.is_heap());
+    }
+
+    #[test]
+    fn test_push_str_transitions_stack_to_heap() {
+        let mut s = SmartString::<4>::new();
+        assert!(s.is_stack());
+
+        s.push_str("ab");
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "ab");
+
+        s.push_str("cd");
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "abcd");
+
+        // Overflow stack capacity => move to heap.
+        s.push_str("e");
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "abcde");
+    }
+
+    #[test]
+    fn test_push_char_and_unicode_boundaries() {
+        let mut s = SmartString::<4>::new();
+        s.push('€'); // 3 bytes
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "€");
+
+        s.push('a'); // +1 byte => exactly 4
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "€a");
+
+        // +1 byte => overflow => heap
+        s.push('b');
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "€ab");
+
+        // Truncate on UTF-8 boundary should work for both stack and heap variants.
+        s.truncate(3);
+        assert_eq!(s.as_str(), "€");
+        assert_eq!(s.pop(), Some('€'));
+        assert_eq!(s.as_str(), "");
+        assert_eq!(s.pop(), None);
+    }
+
+    #[test]
+    fn test_reserve_transitions_stack_to_heap() {
+        let mut s = SmartString::<4>::from("ab");
+        assert!(s.is_stack());
+
+        // Fits within remaining stack capacity.
+        s.reserve(2);
+        assert!(s.is_stack());
+
+        // Requires more than remaining capacity => transition to heap.
+        s.reserve(3);
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "ab");
+    }
+
+    #[test]
+    fn test_try_into_stack_converts_short_heap_string() {
+        let s = SmartString::<4>::from(String::from("abc"));
+        assert!(s.is_heap());
+
+        let s = s.try_into_stack();
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "abc");
+    }
+
+    #[test]
+    fn test_into_heap_always_returns_heap_variant() {
+        let s = SmartString::<4>::from("abc");
+        assert!(s.is_stack());
+
+        let s = s.into_heap();
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "abc");
+    }
 }

@@ -306,6 +306,24 @@ impl<const N: usize> SmartString<N> {
     }
 
     #[inline]
+    #[must_use]
+    pub fn into_boxed_str(self) -> Box<str> {
+        self.into_string().into_boxed_str()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn leak<'a>(self) -> &'a mut str {
+        self.into_string().leak()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn from_utf8_lossy(v: &[u8]) -> Cow<'_, str> {
+        String::from_utf8_lossy(v)
+    }
+
+    #[inline]
     pub fn insert(&mut self, idx: usize, ch: char) {
         self.ensure_heap_mut().insert(idx, ch);
     }
@@ -980,5 +998,27 @@ mod tests {
         s.extend([&b]);
         assert!(s.is_heap());
         assert_eq!(s.as_str(), "€ab");
+    }
+
+    #[test]
+    fn test_into_boxed_str() {
+        let boxed = SmartString::<4>::from("ab").into_boxed_str();
+        assert_eq!(&*boxed, "ab");
+    }
+
+    #[test]
+    fn test_leak() {
+        let leaked: &'static mut str = SmartString::<4>::from("ab").leak();
+        leaked.make_ascii_uppercase();
+        assert_eq!(leaked, "AB");
+    }
+
+    #[test]
+    fn test_from_utf8_lossy() {
+        let s = SmartString::<4>::from_utf8_lossy(&[0x66, 0x6f, 0x6f]);
+        assert_eq!(s, "foo");
+
+        let s = SmartString::<4>::from_utf8_lossy(&[0xff]);
+        assert!(matches!(s, Cow::Owned(_)));
     }
 }

@@ -52,11 +52,11 @@ sound and its performance intent intact.
   - [x] `push`, `push_str`, `pop`, `truncate`, `clear`
   - [x] `reserve`, `reserve_exact`, `try_reserve*`, `shrink_to_fit`, `shrink_to`
   - [x] `len`, `is_empty` (explicit wrappers for std parity + rustdoc discoverability)
-  - [ ] `insert`, `insert_str`
   - [x] `insert`, `insert_str` (currently promotes to heap and delegates)
   - [x] `remove`, `retain`, `drain`, `replace_range` (currently promotes to heap and delegates)
   - [x] `split_off` (promotes to heap and delegates; returned value may be stored on stack if it fits)
   - [x] `into_bytes`, `into_string` (consuming conversions)
+  - [x] `into_boxed_str`, `leak`, `from_utf8_lossy`
   - [ ] `as_mut_vec` (likely **out of scope**; would expose raw bytes and complicate UTF‑8 invariants)
 
 - **PascalString**

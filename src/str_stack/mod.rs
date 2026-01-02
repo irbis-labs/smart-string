@@ -53,9 +53,9 @@ impl StrStack {
     /// - `self.data[begin..end]` must be valid UTF-8
     pub unsafe fn get_unchecked(&self, begin: usize, end: usize) -> &str {
         // SAFETY: caller upholds bounds + UTF-8 preconditions (see doc comment).
-        let slice = unsafe { self.data.get_unchecked(begin..end) };
+        let slice = self.data.get_unchecked(begin..end);
         // SAFETY: caller upholds UTF-8 preconditions (see doc comment).
-        unsafe { from_utf8_unchecked(slice) }
+        from_utf8_unchecked(slice)
     }
 
     #[inline]

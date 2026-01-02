@@ -10,7 +10,7 @@ are expected to come with boundary-focused tests and clear invariants.
 From the crate root:
 
 ```bash
-cargo test
+cargo +stable test
 ```
 
 ## Quality gates
@@ -19,8 +19,8 @@ This repository uses a `rustfmt.toml` that enables unstable options, so formatti
 
 ```bash
 cargo +nightly fmt --all -- --check
-cargo check --all-targets
-cargo test
+cargo +stable check --all-targets
+cargo +stable test
 cargo +stable clippy --all-targets -- -D warnings
 ```
 
@@ -32,6 +32,13 @@ This crate declares MSRV in `Cargo.toml` (`rust-version`). To verify it locally:
 rustup toolchain install 1.59.0 --profile minimal
 cargo +1.59.0 test --locked
 ```
+
+## Required local test matrix
+
+Before opening a PR, validate on both:
+
+- **Latest stable**: `cargo +stable test`
+- **MSRV**: `cargo +1.59.0 test --locked`
 
 ## What to test
 

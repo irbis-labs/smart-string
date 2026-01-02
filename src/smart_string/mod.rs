@@ -325,17 +325,75 @@ impl<const N: usize> SmartString<N> {
 
     #[inline]
     pub fn insert(&mut self, idx: usize, ch: char) {
-        self.ensure_heap_mut().insert(idx, ch);
+        match self {
+            Self::Heap(s) => s.insert(idx, ch),
+            Self::Stack(s) => match s.try_insert(idx, ch) {
+                Ok(()) => (),
+                Err(pascal_string::InsertError::TooLong) => {
+                    self.ensure_heap_mut().insert(idx, ch)
+                }
+                Err(_) => panic!("invalid index or char boundary"),
+            },
+        }
     }
 
     #[inline]
     pub fn insert_str(&mut self, idx: usize, string: &str) {
-        self.ensure_heap_mut().insert_str(idx, string);
+        match self {
+            Self::Heap(s) => s.insert_str(idx, string),
+            Self::Stack(s) => match s.try_insert_str(idx, string) {
+                Ok(()) => (),
+                Err(pascal_string::InsertError::TooLong) => {
+                    self.ensure_heap_mut().insert_str(idx, string)
+                }
+                Err(_) => panic!("invalid index or char boundary"),
+            },
+        }
+    }
+
+    /// Inserts a string slice, truncating when stored on stack; returns the remainder that did not fit.
+    ///
+    /// - If this value is stored on the heap, insertion is complete and the remainder is always `""`.
+    /// - If this value is stored on the stack, insertion is best-effort and the remainder is returned.
+    ///
+    /// Panics if `idx` is out of bounds or not on a UTF-8 boundary (matches `String` semantics).
+    #[inline]
+    pub fn insert_str_truncated<'s>(&mut self, idx: usize, string: &'s str) -> &'s str {
+        self.try_insert_str_truncated(idx, string)
+            .expect("invalid index or char boundary")
+    }
+
+    /// Non-panicking variant of `insert_str_truncated`.
+    ///
+    /// Returns `InsertError` on invalid indices/boundaries.
+    #[inline]
+    pub fn try_insert_str_truncated<'s>(
+        &mut self,
+        idx: usize,
+        string: &'s str,
+    ) -> Result<&'s str, pascal_string::InsertError> {
+        match self {
+            Self::Heap(s) => {
+                let len = s.len();
+                if idx > len {
+                    return Err(pascal_string::InsertError::OutOfBounds { idx, len });
+                }
+                if !s.is_char_boundary(idx) {
+                    return Err(pascal_string::InsertError::NotCharBoundary { idx });
+                }
+                s.insert_str(idx, string);
+                Ok("")
+            }
+            Self::Stack(s) => s.try_insert_str_truncated(idx, string),
+        }
     }
 
     #[inline]
     pub fn remove(&mut self, idx: usize) -> char {
-        self.ensure_heap_mut().remove(idx)
+        match self {
+            Self::Heap(s) => s.remove(idx),
+            Self::Stack(s) => s.remove(idx),
+        }
     }
 
     #[inline]
@@ -1012,12 +1070,35 @@ mod tests {
         assert!(s.is_stack());
 
         s.insert(1, '€');
-        assert!(s.is_heap());
+        assert!(s.is_stack());
         assert_eq!(s.as_str(), "a€b");
 
         let removed = s.remove(1);
         assert_eq!(removed, '€');
         assert_eq!(s.as_str(), "ab");
+    }
+
+    #[test]
+    fn test_insert_promotes_to_heap_when_overflow() {
+        let mut s = SmartString::<4>::from("ab");
+        assert!(s.is_stack());
+
+        // inserting "€" (3 bytes) into "ab" (2 bytes) => 5 bytes, overflows stack cap => heap
+        s.insert(1, '€');
+        assert!(s.is_heap());
+        assert_eq!(s.as_str(), "a€b");
+    }
+
+    #[test]
+    fn test_insert_str_truncated_on_stack() {
+        let mut s = SmartString::<4>::from("ab");
+        assert!(s.is_stack());
+
+        // insert at idx=1: only 2 bytes available, so only "cd" fits (not "cde").
+        let rem = s.insert_str_truncated(1, "cde");
+        assert_eq!(s.as_str(), "acdb");
+        assert_eq!(rem, "e");
+        assert!(s.is_stack());
     }
 
     #[test]

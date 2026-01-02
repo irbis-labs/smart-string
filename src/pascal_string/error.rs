@@ -8,6 +8,26 @@ pub enum TryFromStrError {
     TooLong,
 }
 
+/// An error returned by insertion operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InsertError {
+    /// The index is outside the string bounds.
+    OutOfBounds { idx: usize, len: usize },
+    /// The index is not on a UTF-8 character boundary.
+    NotCharBoundary { idx: usize },
+    /// The result would exceed the fixed capacity.
+    TooLong,
+}
+
+/// An error returned by removal operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoveError {
+    /// The index is outside the string bounds.
+    OutOfBounds { idx: usize, len: usize },
+    /// The index is not on a UTF-8 character boundary.
+    NotCharBoundary { idx: usize },
+}
+
 /// An error returned when a conversion from a `&[u8]` to a `PascalString` fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TryFromBytesError {
@@ -35,6 +55,29 @@ impl fmt::Display for TryFromStrError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             TryFromStrError::TooLong => f.write_str("string too long"),
+        }
+    }
+}
+
+impl fmt::Display for InsertError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            InsertError::OutOfBounds { idx, len } => {
+                write!(f, "index out of bounds: idx={idx}, len={len}")
+            }
+            InsertError::NotCharBoundary { idx } => write!(f, "index is not a char boundary: idx={idx}"),
+            InsertError::TooLong => f.write_str("string too long"),
+        }
+    }
+}
+
+impl fmt::Display for RemoveError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RemoveError::OutOfBounds { idx, len } => {
+                write!(f, "index out of bounds: idx={idx}, len={len}")
+            }
+            RemoveError::NotCharBoundary { idx } => write!(f, "index is not a char boundary: idx={idx}"),
         }
     }
 }

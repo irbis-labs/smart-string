@@ -18,6 +18,8 @@ mod error;
 mod with_serde;
 
 pub use error::TryFromBytesError;
+pub use error::InsertError;
+pub use error::RemoveError;
 pub use error::TryFromStrError;
 
 #[derive(Clone, Copy)]
@@ -150,17 +152,188 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     ///
     /// This mirrors `String::push_str`’s “cannot fail” ergonomics; use `try_push_str` if you want a recoverable error.
     #[inline]
+    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_push_str`, `push_str_truncated`, or `push_str_expect_capacity`.")]
     pub fn push_str(&mut self, string: &str) {
-        self.try_push_str(string)
-            .expect("PascalString capacity exceeded");
+        self.push_str_expect_capacity(string);
     }
 
     /// Appends a character, panicking if the capacity would be exceeded.
     ///
     /// This mirrors `String::push`’s “cannot fail” ergonomics; use `try_push` if you want a recoverable error.
     #[inline]
+    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_push`, `push_str_truncated`, or `push_expect_capacity`.")]
     pub fn push(&mut self, ch: char) {
+        self.push_expect_capacity(ch);
+    }
+
+    /// Appends a string slice, panicking if the capacity would be exceeded.
+    #[inline]
+    pub fn push_str_expect_capacity(&mut self, string: &str) {
+        self.try_push_str(string)
+            .expect("PascalString capacity exceeded");
+    }
+
+    /// Appends a character, panicking if the capacity would be exceeded.
+    #[inline]
+    pub fn push_expect_capacity(&mut self, ch: char) {
         self.try_push(ch).expect("PascalString capacity exceeded");
+    }
+
+    /// Inserts a string slice at the given byte index.
+    ///
+    /// This is a true `try_` API: it **never panics**. All failure modes are returned as `InsertError`.
+    #[inline]
+    pub fn try_insert_str(&mut self, idx: usize, string: &str) -> Result<(), InsertError> {
+        let len = self.len();
+        if idx > len {
+            return Err(InsertError::OutOfBounds { idx, len });
+        }
+        if !self.is_char_boundary(idx) {
+            return Err(InsertError::NotCharBoundary { idx });
+        }
+
+        let insert_len = string.len();
+        let new_len = len + insert_len;
+        if new_len > CAPACITY {
+            return Err(InsertError::TooLong);
+        }
+
+        // Shift tail to make room.
+        self.data.copy_within(idx..len, idx + insert_len);
+        // Copy inserted bytes.
+        self.data[idx..idx + insert_len].copy_from_slice(string.as_bytes());
+        self.len = new_len as u8;
+        Ok(())
+    }
+
+    /// Inserts a string slice at the given byte index, truncating the inserted string to available capacity.
+    ///
+    /// Returns the remainder that did not fit.
+    ///
+    /// This is a true `try_` API: it **never panics**. Index/boundary errors are returned as `InsertError`.
+    #[inline]
+    pub fn try_insert_str_truncated<'s>(
+        &mut self,
+        idx: usize,
+        string: &'s str,
+    ) -> Result<&'s str, InsertError> {
+        let len = self.len();
+        if idx > len {
+            return Err(InsertError::OutOfBounds { idx, len });
+        }
+        if !self.is_char_boundary(idx) {
+            return Err(InsertError::NotCharBoundary { idx });
+        }
+
+        let available = CAPACITY.saturating_sub(len);
+        if available >= string.len() {
+            self.try_insert_str(idx, string)?;
+            return Ok("");
+        }
+
+        let mut prefix_len = 0;
+        for c in string.chars() {
+            let l = c.len_utf8();
+            if prefix_len + l > available {
+                break;
+            }
+            prefix_len += l;
+        }
+
+        let (prefix, remainder) = string.split_at(prefix_len);
+        // Prefix is constructed from `chars()` boundaries, so it is valid UTF-8 and fits by construction.
+        self.try_insert_str(idx, prefix)?;
+        Ok(remainder)
+    }
+
+    /// Inserts a string slice at the given byte index, truncating to capacity, panicking on invalid index/boundary.
+    ///
+    /// Returns the remainder that did not fit.
+    #[inline]
+    pub fn insert_str_truncated<'s>(&mut self, idx: usize, string: &'s str) -> &'s str {
+        self.try_insert_str_truncated(idx, string)
+            .expect("invalid index or char boundary")
+    }
+
+    /// Inserts a string slice at the given byte index, panicking if the capacity would be exceeded.
+    ///
+    /// This is an explicit opt-in panicking API for fixed-capacity strings.
+    #[inline]
+    pub fn insert_str_expect_capacity(&mut self, idx: usize, string: &str) {
+        self.try_insert_str(idx, string)
+            .expect("PascalString insert failed");
+    }
+
+    /// Inserts a string slice at the given byte index, panicking if the capacity would be exceeded.
+    #[inline]
+    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_insert_str`, `try_insert_str_truncated`, or `insert_str_expect_capacity`.")]
+    pub fn insert_str(&mut self, idx: usize, string: &str) {
+        self.insert_str_expect_capacity(idx, string);
+    }
+
+    /// Inserts a character at the given byte index.
+    ///
+    /// This is a true `try_` API: it **never panics**. All failure modes are returned as `InsertError`.
+    #[inline]
+    pub fn try_insert(&mut self, idx: usize, ch: char) -> Result<(), InsertError> {
+        let mut buf = [0_u8; 4];
+        let s = ch.encode_utf8(&mut buf);
+        self.try_insert_str(idx, s)
+    }
+
+    /// Inserts a character at the given byte index, panicking if the capacity would be exceeded.
+    #[inline]
+    pub fn insert_expect_capacity(&mut self, idx: usize, ch: char) {
+        self.try_insert(idx, ch)
+            .expect("PascalString insert failed");
+    }
+
+    /// Inserts a character at the given byte index, panicking if the capacity would be exceeded.
+    #[inline]
+    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_insert`, `try_insert_str_truncated`, or `insert_expect_capacity`.")]
+    pub fn insert(&mut self, idx: usize, ch: char) {
+        self.insert_expect_capacity(idx, ch);
+    }
+
+    /// Removes and returns the `char` at the given byte index.
+    ///
+    /// # Panics
+    ///
+    /// - If `idx >= self.len()`
+    /// - If `idx` is not on a UTF-8 character boundary
+    #[inline]
+    pub fn remove(&mut self, idx: usize) -> char {
+        let len = self.len();
+        assert!(idx < len, "index out of bounds");
+        assert!(self.is_char_boundary(idx), "index is not a char boundary");
+
+        let ch = self.as_str()[idx..].chars().next().expect("idx < len");
+        let ch_len = ch.len_utf8();
+
+        // Shift tail left to close the gap.
+        self.data.copy_within(idx + ch_len..len, idx);
+        let new_len = len - ch_len;
+        self.len = new_len as u8;
+
+        // Keep deterministic contents beyond len (not required for soundness, but helps debugging/tests).
+        self.data[new_len..len].fill(0);
+
+        ch
+    }
+
+    /// Removes and returns the `char` at the given byte index.
+    ///
+    /// This is a true `try_` API: it **never panics**. All failure modes are returned as `RemoveError`.
+    #[inline]
+    pub fn try_remove(&mut self, idx: usize) -> Result<char, RemoveError> {
+        let len = self.len();
+        if idx >= len {
+            return Err(RemoveError::OutOfBounds { idx, len });
+        }
+        if !self.is_char_boundary(idx) {
+            return Err(RemoveError::NotCharBoundary { idx });
+        }
+        Ok(self.remove(idx))
     }
 
     /// Returns the remainder of the string that was not pushed.
@@ -632,9 +805,28 @@ mod tests {
     fn test_push_str_panics_on_overflow() {
         let result = std::panic::catch_unwind(|| {
             let mut ps = PascalString::<4>::new();
-            ps.push_str("abcde");
+            ps.push_str_expect_capacity("abcde");
         });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_insert_str_and_remove_unicode_boundaries() {
+        let mut ps = PascalString::<8>::try_from("ab").unwrap();
+        ps.insert_str_expect_capacity(1, "€"); // 3 bytes
+        assert_eq!(ps.as_str(), "a€b");
+
+        let removed = ps.remove(1);
+        assert_eq!(removed, '€');
+        assert_eq!(ps.as_str(), "ab");
+    }
+
+    #[test]
+    fn test_try_insert_str_too_long_does_not_modify() {
+        let mut ps = PascalString::<4>::try_from("ab").unwrap();
+        let err = ps.try_insert_str(1, "€").unwrap_err(); // would become 5 bytes
+        assert_eq!(err, InsertError::TooLong);
+        assert_eq!(ps.as_str(), "ab");
     }
 
     #[test]

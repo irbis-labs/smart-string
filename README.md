@@ -4,7 +4,7 @@
 [//]: # ([![Build Status]&#40;https://travis-ci.org/irbis-labs/smart-string.svg&#41;]&#40;https://travis-ci.org/irbis-labs/smart-string&#41;)
 
 [//]: # ([![Coverage Status]&#40;https://coveralls.io/repos/github/irbis-labs/smart-string/badge.svg?branch=main&#41;]&#40;https://coveralls.io/github/irbis-labs/smart-string?branch=main&#41;)
-![Minimal rust version 1.56](https://img.shields.io/badge/rustc-1.56+-green.svg) (sorry, not checked yet)
+![MSRV 1.59](https://img.shields.io/badge/rustc-1.59+-green.svg)
 
 # Smart String Library
 
@@ -24,6 +24,17 @@ Some core behavior is covered by unit tests, but coverage is incomplete.
 ## Features
 
 - [x] `serde` - Enables serde support.
+
+## MSRV (Minimum Supported Rust Version)
+
+MSRV is **Rust 1.59.0** (with default features).
+
+Motivation:
+
+- This crate uses the 2021 edition and relies on language features needed by the public API (notably a **default const
+  generic parameter** in `SmartString<const N: usize = DEFAULT_CAPACITY>`).
+- Keeping MSRV relatively low matters for library users; if we ever need to bump it, we should document it in release
+  notes.
 
 ## What's in the box
 

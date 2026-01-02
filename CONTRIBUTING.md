@@ -24,6 +24,15 @@ cargo test
 cargo +stable clippy --all-targets -- -D warnings
 ```
 
+## MSRV check
+
+This crate declares MSRV in `Cargo.toml` (`rust-version`). To verify it locally:
+
+```bash
+rustup toolchain install 1.59.0 --profile minimal
+cargo +1.59.0 test --locked
+```
+
 ## What to test
 
 When changing behavior around storage, UTF-8 boundaries, or unsafe code paths, please include tests for:

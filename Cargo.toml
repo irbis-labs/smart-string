@@ -18,6 +18,7 @@ repository = "https://github.com/irbis-labs/smart-string"
 documentation = "https://docs.rs/smart-string/"
 
 edition = "2021"
+rust-version = "1.59"
 
 [badges]
 #travis-ci = { repository = "irbis-labs/smart-string" }

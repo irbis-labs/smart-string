@@ -8,13 +8,16 @@
 //!
 //! - `SmartString` promotion (stack → heap) can happen implicitly during mutation when capacity is exceeded.
 //! - Demotion (heap → stack) is **explicit** and must be requested via [`SmartString::try_into_stack`].
+//! - MSRV (default features): **Rust 1.59.0**.
+//!   - Motivation: `SmartString`'s public API uses a default const generic parameter
+//!     (`SmartString<const N: usize = DEFAULT_CAPACITY>`), which requires newer compilers.
 mod display_ext;
 pub mod pascal_string;
 pub mod smart_string;
 pub mod str_stack;
 
-pub use display_ext::DisplayExt;
-pub use pascal_string::PascalString;
-pub use smart_string::SmartString;
-pub use str_stack::StrStack;
-pub use str_stack::StrStackIter;
+pub use crate::display_ext::DisplayExt;
+pub use crate::pascal_string::PascalString;
+pub use crate::smart_string::SmartString;
+pub use crate::str_stack::StrStack;
+pub use crate::str_stack::StrStackIter;

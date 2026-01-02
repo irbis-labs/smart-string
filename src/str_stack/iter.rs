@@ -44,6 +44,8 @@ impl<'a> Iterator for StrStackIter<'a> {
             .get(next_index)
             .copied()
             .map(|next_end| Cursor::new(next_index, end, next_end));
+        // SAFETY: `StrStackIter` is constructed from a valid `StrStack` and advances using `ends` boundaries.
+        // `StrStack` only stores UTF-8 segments pushed via `push(&str)`, so `[begin..end]` is in-bounds and valid UTF-8.
         Some(unsafe { self.stack.get_unchecked(begin, end) })
     }
 

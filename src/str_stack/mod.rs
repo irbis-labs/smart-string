@@ -30,12 +30,16 @@ impl StrStack {
 
     #[inline]
     pub fn as_str(&self) -> &str {
+        // SAFETY: `self.data` is only appended to via `push(&str)` and truncated via `remove_top()`,
+        // so it is always valid UTF-8.
         unsafe { from_utf8_unchecked(&self.data) }
     }
 
     #[inline]
     pub fn get(&self, index: usize) -> Option<&str> {
         let (begin, end) = self.get_bounds(index)?;
+        // SAFETY: `get_bounds` ensures `begin <= end <= self.data.len()`, and the stack stores only UTF-8 segments
+        // pushed via `push(&str)`.
         Some(unsafe { self.get_unchecked(begin, end) })
     }
 
@@ -48,7 +52,9 @@ impl StrStack {
     /// - `end <= self.data.len()`
     /// - `self.data[begin..end]` must be valid UTF-8
     pub unsafe fn get_unchecked(&self, begin: usize, end: usize) -> &str {
+        // SAFETY: caller upholds bounds + UTF-8 preconditions (see doc comment).
         let slice = unsafe { self.data.get_unchecked(begin..end) };
+        // SAFETY: caller upholds UTF-8 preconditions (see doc comment).
         unsafe { from_utf8_unchecked(slice) }
     }
 

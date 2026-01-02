@@ -28,6 +28,7 @@ sound and its performance intent intact.
   - [x] `AsMut<str>`, `BorrowMut<str>`
   - [x] `From<&str>`, `From<String>`, `From<char>`, `From<Cow<str>>`
   - [x] `From<&String>`, `From<Box<str>>`, `From<Rc<str>>`, `From<Arc<str>>`
+  - [x] `From<&Box<str>>`, `From<&Rc<str>>`, `From<&Arc<str>>`
   - [x] `FromStr` (infallible)
   - [x] `FromIterator<char>`, `FromIterator<&str>`
   - [x] `Extend<char>`, `Extend<&str>`, `Extend<String>`

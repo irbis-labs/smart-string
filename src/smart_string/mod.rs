@@ -620,6 +620,13 @@ impl<const N: usize> From<Box<str>> for SmartString<N> {
     }
 }
 
+impl<const N: usize> From<&Box<str>> for SmartString<N> {
+    #[inline]
+    fn from(s: &Box<str>) -> Self {
+        Self::from(s.as_ref())
+    }
+}
+
 impl<const N: usize> From<Rc<str>> for SmartString<N> {
     #[inline]
     fn from(s: Rc<str>) -> Self {
@@ -627,9 +634,23 @@ impl<const N: usize> From<Rc<str>> for SmartString<N> {
     }
 }
 
+impl<const N: usize> From<&Rc<str>> for SmartString<N> {
+    #[inline]
+    fn from(s: &Rc<str>) -> Self {
+        Self::from(s.as_ref())
+    }
+}
+
 impl<const N: usize> From<Arc<str>> for SmartString<N> {
     #[inline]
     fn from(s: Arc<str>) -> Self {
+        Self::from(s.as_ref())
+    }
+}
+
+impl<const N: usize> From<&Arc<str>> for SmartString<N> {
+    #[inline]
+    fn from(s: &Arc<str>) -> Self {
         Self::from(s.as_ref())
     }
 }
@@ -712,6 +733,13 @@ impl<const N: usize> fmt::Write for SmartString<N> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.push_str(s);
         Ok(())
+    }
+}
+
+impl<const N: usize> From<SmartString<N>> for Box<str> {
+    #[inline]
+    fn from(s: SmartString<N>) -> Self {
+        s.into_boxed_str()
     }
 }
 
@@ -1040,5 +1068,19 @@ mod tests {
         let s = SmartString::<2>::from('€'); // won't fit (3 bytes)
         assert!(s.is_heap());
         assert_eq!(s.as_str(), "€");
+    }
+
+    #[test]
+    fn test_from_ref_str_containers_and_into_box_str() {
+        let b: Box<str> = "ab".into();
+        let r: Rc<str> = Rc::from("ab");
+        let a: Arc<str> = Arc::from("ab");
+
+        assert_eq!(SmartString::<4>::from(&b).as_str(), "ab");
+        assert_eq!(SmartString::<4>::from(&r).as_str(), "ab");
+        assert_eq!(SmartString::<4>::from(&a).as_str(), "ab");
+
+        let boxed: Box<str> = SmartString::<4>::from("ab").into();
+        assert_eq!(&*boxed, "ab");
     }
 }

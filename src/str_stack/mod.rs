@@ -242,4 +242,22 @@ mod tests {
         assert_eq!(iter.next(), None);
         assert_eq!(iter.next(), None);
     }
+
+    #[test]
+    fn test_unicode_push_get_bounds_and_as_str() {
+        let mut stack = StrStack::new();
+        stack.push("€"); // 3 bytes
+        stack.push("a"); // 1 byte
+        stack.push("😊"); // 4 bytes
+
+        assert_eq!(stack.as_str(), "€a😊");
+
+        assert_eq!(stack.get(0), Some("€"));
+        assert_eq!(stack.get(1), Some("a"));
+        assert_eq!(stack.get(2), Some("😊"));
+
+        assert_eq!(stack.get_bounds(0), Some((0, 3)));
+        assert_eq!(stack.get_bounds(1), Some((3, 4)));
+        assert_eq!(stack.get_bounds(2), Some((4, 8)));
+    }
 }

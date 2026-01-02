@@ -103,4 +103,32 @@ mod tests {
         assert_eq!(iter.next(), None);
         assert_eq!(iter.next(), None);
     }
+
+    #[test]
+    fn test_exact_size_len_and_size_hint_decrease() {
+        let mut stack = StrStack::new();
+        stack.push("a");
+        stack.push("bb");
+        stack.push("ccc");
+
+        let mut it = stack.iter();
+        assert_eq!(it.len(), 3);
+        assert_eq!(it.size_hint(), (3, Some(3)));
+
+        assert_eq!(it.next(), Some("a"));
+        assert_eq!(it.len(), 2);
+        assert_eq!(it.size_hint(), (2, Some(2)));
+
+        assert_eq!(it.next(), Some("bb"));
+        assert_eq!(it.len(), 1);
+        assert_eq!(it.size_hint(), (1, Some(1)));
+
+        assert_eq!(it.next(), Some("ccc"));
+        assert_eq!(it.len(), 0);
+        assert_eq!(it.size_hint(), (0, Some(0)));
+
+        assert_eq!(it.next(), None);
+        assert_eq!(it.len(), 0);
+        assert_eq!(it.size_hint(), (0, Some(0)));
+    }
 }

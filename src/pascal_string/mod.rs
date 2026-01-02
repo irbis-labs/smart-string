@@ -474,4 +474,66 @@ mod tests {
         let map: std::collections::HashSet<_> = ["abc"].into_iter().collect();
         assert!(map.contains(&*ps));
     }
+
+    #[test]
+    fn test_try_push_str_too_long_does_not_modify() {
+        let mut ps = PascalString::<4>::try_from("ab").unwrap();
+        assert_eq!(ps.as_str(), "ab");
+
+        let err = ps.try_push_str("cde").unwrap_err();
+        assert_eq!(err, TryFromStrError::TooLong);
+        assert_eq!(ps.as_str(), "ab");
+    }
+
+    #[test]
+    fn test_try_push_char_too_long_does_not_modify() {
+        let mut ps = PascalString::<3>::new();
+        ps.try_push('€').unwrap(); // 3 bytes
+        assert_eq!(ps.as_str(), "€");
+
+        let err = ps.try_push('a').unwrap_err(); // +1 would overflow
+        assert_eq!(err, TryFromStrError::TooLong);
+        assert_eq!(ps.as_str(), "€");
+    }
+
+    #[test]
+    fn test_push_str_truncated_respects_utf8_boundary() {
+        let mut ps = PascalString::<4>::new();
+
+        // "€" is 3 bytes. "€a" is 4 bytes. "€ab" is 5 bytes.
+        let remainder = ps.push_str_truncated("€ab");
+        assert_eq!(ps.as_str(), "€a");
+        assert_eq!(remainder, "b");
+    }
+
+    #[test]
+    fn test_from_str_truncated_truncates_on_boundary() {
+        let ps = PascalString::<4>::from_str_truncated("€ab");
+        assert_eq!(ps.as_str(), "€a");
+        assert_eq!(ps.len(), 4);
+    }
+
+    #[test]
+    fn test_truncate_requires_char_boundary() {
+        let mut ps = PascalString::<4>::new();
+        ps.try_push('€').unwrap(); // 3 bytes
+        ps.try_push('a').unwrap(); // 1 byte => 4
+        assert_eq!(ps.as_str(), "€a");
+
+        // 1 is in the middle of the 3-byte UTF-8 sequence for '€'.
+        let result = std::panic::catch_unwind(move || {
+            let mut ps = ps;
+            ps.truncate(1);
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_try_from_bytes_invalid_utf8() {
+        let err = PascalString::<8>::try_from(&[0xff_u8][..]).unwrap_err();
+        match err {
+            TryFromBytesError::Utf8Error(_) => {}
+            _ => panic!("expected Utf8Error, got: {err:?}"),
+        }
+    }
 }

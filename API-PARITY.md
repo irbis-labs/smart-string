@@ -18,6 +18,10 @@ sound and its performance intent intact.
 - **Unsafe policy**: every `unsafe {}` must have a local `// SAFETY:` comment describing the invariant that makes it
   sound; tests should cover UTF‑8 boundaries and capacity edges.
 
+Note: some “compatibility” conversions (e.g. consuming `SmartString` into `Rc<str>` / `Arc<str>`) may inherently require
+allocations/copies due to how these pointer types manage their backing buffers. We implement them for API parity; if they
+show up hot in profiling, we should document the cost model and optimize where possible.
+
 ## Parity checklist (high-level)
 
 ### Traits (priority: high)
@@ -26,9 +30,10 @@ sound and its performance intent intact.
   - [x] `Deref<Target=str>`, `DerefMut`
   - [x] `AsRef<str>`, `AsRef<[u8]>`, `Borrow<str>`
   - [x] `AsMut<str>`, `BorrowMut<str>`
-  - [x] `From<&str>`, `From<String>`, `From<char>`, `From<Cow<str>>`
+  - [x] `From<&str>`, `From<String>`, `From<char>`, `From<Cow<str>>`, `From<&Cow<str>>`
   - [x] `From<&String>`, `From<Box<str>>`, `From<Rc<str>>`, `From<Arc<str>>`
   - [x] `From<&Box<str>>`, `From<&Rc<str>>`, `From<&Arc<str>>`
+  - [x] `From<SmartString> for Vec<u8>`, `Box<str>`, `Rc<str>`, `Arc<str>`
   - [x] `FromStr` (infallible)
   - [x] `FromIterator<char>`, `FromIterator<&str>`
   - [x] `Extend<char>`, `Extend<&str>`, `Extend<String>`

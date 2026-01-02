@@ -665,6 +665,13 @@ impl<const N: usize> From<Cow<'_, str>> for SmartString<N> {
     }
 }
 
+impl<const N: usize> From<&Cow<'_, str>> for SmartString<N> {
+    #[inline]
+    fn from(s: &Cow<'_, str>) -> Self {
+        Self::from(s.as_ref())
+    }
+}
+
 impl<const N: usize> FromIterator<char> for SmartString<N> {
     fn from_iter<T: IntoIterator<Item = char>>(iter: T) -> Self {
         let mut s = Self::new();
@@ -740,6 +747,31 @@ impl<const N: usize> From<SmartString<N>> for Box<str> {
     #[inline]
     fn from(s: SmartString<N>) -> Self {
         s.into_boxed_str()
+    }
+}
+
+impl<const N: usize> From<SmartString<N>> for Vec<u8> {
+    #[inline]
+    fn from(s: SmartString<N>) -> Self {
+        s.into_bytes()
+    }
+}
+
+impl<const N: usize> From<SmartString<N>> for Rc<str> {
+    #[inline]
+    fn from(s: SmartString<N>) -> Self {
+        // NOTE: converting an owned string into Rc/Arc necessarily allocates an Rc/Arc-managed buffer.
+        // We go through `String` here for correctness and std-like ergonomics; if this turns out hot,
+        // we can evaluate alternative paths and document the cost model.
+        Rc::from(s.into_string())
+    }
+}
+
+impl<const N: usize> From<SmartString<N>> for Arc<str> {
+    #[inline]
+    fn from(s: SmartString<N>) -> Self {
+        // See note on `Rc<str>` above.
+        Arc::from(s.into_string())
     }
 }
 
@@ -1082,5 +1114,25 @@ mod tests {
 
         let boxed: Box<str> = SmartString::<4>::from("ab").into();
         assert_eq!(&*boxed, "ab");
+    }
+
+    #[test]
+    fn test_from_cow_ref() {
+        let borrowed: Cow<'_, str> = Cow::Borrowed("ab");
+        let owned: Cow<'_, str> = Cow::Owned(String::from("ab"));
+        assert_eq!(SmartString::<4>::from(&borrowed).as_str(), "ab");
+        assert_eq!(SmartString::<4>::from(&owned).as_str(), "ab");
+    }
+
+    #[test]
+    fn test_into_vec_u8_rc_arc_str() {
+        let bytes: Vec<u8> = SmartString::<4>::from("ab").into();
+        assert_eq!(bytes, b"ab");
+
+        let rc: Rc<str> = SmartString::<4>::from("ab").into();
+        assert_eq!(&*rc, "ab");
+
+        let arc: Arc<str> = SmartString::<4>::from("ab").into();
+        assert_eq!(&*arc, "ab");
     }
 }

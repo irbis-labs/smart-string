@@ -175,7 +175,7 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
 
     #[inline]
     pub fn pop(&mut self) -> Option<char> {
-        let ch = self.chars().rev().next()?;
+        let ch = self.chars().next_back()?;
         let newlen = self.len() - ch.len_utf8();
         self.len = newlen as u8;
         Some(ch)

@@ -32,7 +32,6 @@ impl<const N: usize> SmartString<N> {
         Self::Stack(PascalString::new())
     }
 
-    #[cfg(not(no_global_oom_handling))]
     #[inline]
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
@@ -59,12 +58,10 @@ impl<const N: usize> SmartString<N> {
     //     }
     // }
 
-    #[cfg(not(no_global_oom_handling))]
     pub fn from_utf16(v: &[u16]) -> Result<Self, FromUtf16Error> {
         String::from_utf16(v).map(Self::Heap)
     }
 
-    #[cfg(not(no_global_oom_handling))]
     #[must_use]
     #[inline]
     pub fn from_utf16_lossy(v: &[u16]) -> Self {
@@ -138,7 +135,6 @@ impl<const N: usize> SmartString<N> {
         }
     }
 
-    #[cfg(not(no_global_oom_handling))]
     #[inline]
     pub fn reserve(&mut self, additional: usize) {
         match self {
@@ -153,7 +149,6 @@ impl<const N: usize> SmartString<N> {
         }
     }
 
-    #[cfg(not(no_global_oom_handling))]
     pub fn reserve_exact(&mut self, additional: usize) {
         match self {
             Self::Heap(s) => s.reserve_exact(additional),
@@ -206,7 +201,6 @@ impl<const N: usize> SmartString<N> {
         }
     }
 
-    #[cfg(not(no_global_oom_handling))]
     #[inline]
     pub fn shrink_to_fit(&mut self) {
         match self {
@@ -215,7 +209,6 @@ impl<const N: usize> SmartString<N> {
         }
     }
 
-    #[cfg(not(no_global_oom_handling))]
     #[inline]
     pub fn shrink_to(&mut self, min_capacity: usize) {
         match self {
@@ -224,7 +217,6 @@ impl<const N: usize> SmartString<N> {
         }
     }
 
-    #[cfg(not(no_global_oom_handling))]
     pub fn push(&mut self, ch: char) {
         match self {
             Self::Heap(s) => s.push(ch),
@@ -497,7 +489,8 @@ impl<'a, const N: usize> FromIterator<&'a str> for SmartString<N> {
 impl<const N: usize> fmt::Write for SmartString<N> {
     #[inline]
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        Ok(self.push_str(s))
+        self.push_str(s);
+        Ok(())
     }
 }
 
@@ -508,7 +501,7 @@ impl<const N: usize, T: ops::Deref<Target = str>> ops::Add<T> for SmartString<N>
 
     #[inline]
     fn add(mut self, rhs: T) -> Self::Output {
-        self.push_str(&*rhs);
+        self.push_str(&rhs);
         self
     }
 }

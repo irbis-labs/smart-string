@@ -31,8 +31,8 @@ impl<'de, const CAPACITY: usize> Visitor<'de> for StringVisitor<CAPACITY> {
     where
         E: Error,
     {
-        Ok(PascalString::try_from(v)
-            .map_err(|TryFromStrError::TooLong| Error::invalid_length(v.len(), &self))?)
+        PascalString::try_from(v)
+            .map_err(|TryFromStrError::TooLong| Error::invalid_length(v.len(), &self))
     }
 
     fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>

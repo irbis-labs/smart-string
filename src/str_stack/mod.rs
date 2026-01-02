@@ -40,6 +40,13 @@ impl StrStack {
     }
 
     #[inline]
+    /// Returns a `&str` slice without bounds checks.
+    ///
+    /// # Safety
+    ///
+    /// - `begin <= end`
+    /// - `end <= self.data.len()`
+    /// - `self.data[begin..end]` must be valid UTF-8
     pub unsafe fn get_unchecked(&self, begin: usize, end: usize) -> &str {
         let slice = unsafe { self.data.get_unchecked(begin..end) };
         unsafe { from_utf8_unchecked(slice) }
@@ -98,7 +105,7 @@ impl StrStack {
     }
 
     #[inline]
-    pub fn iter(&self) -> StrStackIter {
+    pub fn iter(&self) -> StrStackIter<'_> {
         StrStackIter::new(self)
     }
 }

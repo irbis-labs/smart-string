@@ -19,7 +19,7 @@
 //! - `PascalString`: `len <= CAPACITY` and `data[..len]` is always valid UTF‑8.
 //! - `StrStack`: `data` is always valid UTF‑8 and `ends` stores valid UTF‑8 segment boundaries within `data`.
 //!
-//! See also: `API-PARITY.md` for the “std `String` parity” checklist and compatibility notes.
+//! See also: `docs/api-parity.md` for the “std `String` parity” checklist and compatibility notes.
 //! - MSRV (default features): **Rust 1.59.0**.
 //!   - Motivation: `SmartString`'s public API uses a default const generic parameter
 //!     (`SmartString<const N: usize = DEFAULT_CAPACITY>`), which requires newer compilers.

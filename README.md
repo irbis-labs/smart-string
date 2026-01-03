@@ -105,7 +105,7 @@ tests must cover UTF‑8 boundary and capacity edge cases.
 - It supports common `String`-like APIs and traits.
 - Some mutation APIs currently **promote to heap and delegate** (trading stack retention for simpler, correct semantics).
 
-For a living checklist of what’s implemented vs planned, see `API-PARITY.md`.
+For a living checklist of what’s implemented vs planned, see `docs/api-parity.md`.
 
 Note on `PascalString`: it is fixed-capacity; for `String`-like “infallible” ergonomics it provides `push` / `push_str`
 which **panic on overflow** (use `try_push` / `try_push_str` for fallible behavior).

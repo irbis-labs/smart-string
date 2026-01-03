@@ -10,7 +10,7 @@ Columns:
 
 - **const**: the method is `pub const fn` (cell contains the word `const`).
 - **unsafe**: the method is `pub unsafe fn` (cell contains the word `unsafe`).
-- **self**: receiver kind: `&self`, `&mut self`, `self`, or `—` for associated functions.
+- **self**: receiver kind: `&self`, `&mut self`, `self`, or `—` for associated functions.
 - **alloc**: short note about allocations/reallocations (coarse; optimized for parity work).
 - **complexity**: short hint (only where it matters; coarse).
 - **fallible**: empty / `Option` / `Result`.
@@ -18,53 +18,53 @@ Columns:
 
 | String method | const | unsafe | self | alloc | complexity | fallible | panics |
 |---|---|---|---|---|---|---|---|
-| `as_bytes` | const |  | `&self` | no | O(1) |  |  |
-| `as_mut_str` | const |  | `&mut self` | no | O(1) |  |  |
-| `as_mut_vec` | const | unsafe | `&mut self` | no | O(1) (unsafe) |  | — (unsafe: must preserve UTF-8) |
-| `as_str` | const |  | `&self` | no | O(1) |  |  |
-| `capacity` | const |  | `&self` | no | O(1) |  |  |
-| `clear` |  |  | `&mut self` | no | O(1) |  |  |
-| `drain` |  |  | `&mut self` | no | O(n) |  | range invalid/out of bounds or not char boundary |
-| `extend_from_within` |  |  | `&mut self` | may realloc | O(k) |  |  |
-| `from_raw_parts` |  | unsafe | — | no (takes Vec parts) | O(1) (unsafe) |  | — (unsafe: UB if invariants not met) |
-| `from_utf16` |  |  | — | alloc | O(n) | Result |  |
-| `from_utf16_lossy` |  |  | — | alloc | O(n) |  |  |
-| `from_utf16be` |  |  | — | alloc | O(n) | Result |  |
-| `from_utf16be_lossy` |  |  | — | alloc | O(n) |  |  |
-| `from_utf16le` |  |  | — | alloc | O(n) | Result |  |
-| `from_utf16le_lossy` |  |  | — | alloc | O(n) |  |  |
-| `from_utf8` |  |  | — | no (takes Vec) | O(n) | Result |  |
-| `from_utf8_lossy` |  |  | — | may alloc | O(n) |  |  |
-| `from_utf8_lossy_owned` |  |  | — | may alloc | O(n) |  |  |
-| `from_utf8_unchecked` |  | unsafe | — | no (takes Vec) | O(1) (unsafe) |  | — (unsafe: UB if invalid UTF-8) |
-| `insert` |  |  | `&mut self` | may realloc | O(n) |  | idx out of bounds or not char boundary |
-| `insert_str` |  |  | `&mut self` | may realloc | O(n) |  | idx out of bounds or not char boundary |
-| `into_boxed_str` |  |  | `self` | may realloc | O(1) to O(n) |  |  |
-| `into_bytes` | const |  | `self` | no | O(1) |  |  |
-| `into_chars` |  |  | `self` | no | O(1) |  |  |
-| `into_raw_parts` |  |  | `self` | no | O(1) |  |  |
-| `is_empty` | const |  | `&self` | no | O(1) |  |  |
-| `leak` |  |  | `self` | no (leaks) | O(1) |  |  |
-| `len` | const |  | `&self` | no | O(1) |  |  |
-| `new` | const |  | — | no | O(1) |  |  |
-| `pop` |  |  | `&mut self` | no | O(1) avg | Option |  |
-| `push` |  |  | `&mut self` | may realloc | amortized |  |  |
-| `push_str` |  |  | `&mut self` | may realloc | amortized |  |  |
-| `remove` |  |  | `&mut self` | no | O(n) |  | idx out of bounds or not char boundary |
-| `remove_matches` |  |  | `&mut self` | no | O(n) |  |  |
-| `replace_first` |  |  | `&mut self` | may realloc | O(n) |  |  |
-| `replace_last` |  |  | `&mut self` | may realloc | O(n) |  |  |
-| `replace_range` |  |  | `&mut self` | may realloc | O(n) |  | range invalid/out of bounds or not char boundary |
-| `reserve` |  |  | `&mut self` | may realloc | amortized |  |  |
-| `reserve_exact` |  |  | `&mut self` | may realloc | O(n) worst |  |  |
-| `retain` |  |  | `&mut self` | no | O(n) |  |  |
-| `shrink_to` |  |  | `&mut self` | may dealloc | O(n) worst |  |  |
-| `shrink_to_fit` |  |  | `&mut self` | may dealloc | O(n) worst |  |  |
-| `split_off` |  |  | `&mut self` | alloc | O(n) |  | at out of bounds or not char boundary |
-| `truncate` |  |  | `&mut self` | no | O(1) |  | not char boundary |
-| `try_reserve` |  |  | `&mut self` | may realloc | amortized | Result |  |
-| `try_reserve_exact` |  |  | `&mut self` | may realloc | O(n) worst | Result |  |
-| `try_with_capacity` |  |  | — | alloc | O(1) | Result |  |
-| `with_capacity` |  |  | — | alloc | O(1) |  |  |
+| `as_bytes` | const |  | `&self` |  |  |  |  |
+| `as_mut_str` | const |  | `&mut self` |  |  |  |  |
+| `as_mut_vec` | const | unsafe | `&mut self` |  |  |  | unsafe: must preserve UTF-8 |
+| `as_str` | const |  | `&self` |  |  |  |  |
+| `capacity` | const |  | `&self` |  |  |  |  |
+| `clear` |  |  | `&mut self` |  |  |  |  |
+| `drain` |  |  | `&mut self` |  |  |  | Panics if the range has `start_bound > end_bound`, or, if the range is bounded on either end and does not lie on a [`char`] boundary. |
+| `extend_from_within` |  |  | `&mut self` | may realloc |  |  | Panics if the range has `start_bound > end_bound`, if the range is bounded on either end and does not lie on a [`char`] boundary, or if the new capacity exceeds `isize::MAX` bytes. |
+| `from_raw_parts` |  | unsafe | — | no (takes Vec parts) |  |  | unsafe: UB if invariants not met |
+| `from_utf16` |  |  | — | alloc |  | Result |  |
+| `from_utf16_lossy` |  |  | — | alloc |  |  |  |
+| `from_utf16be` |  |  | — | alloc |  | Result |  |
+| `from_utf16be_lossy` |  |  | — | alloc |  |  |  |
+| `from_utf16le` |  |  | — | alloc |  | Result |  |
+| `from_utf16le_lossy` |  |  | — | alloc |  |  |  |
+| `from_utf8` |  |  | — | no (takes Vec) |  | Result |  |
+| `from_utf8_lossy` |  |  | — | may alloc |  |  |  |
+| `from_utf8_lossy_owned` |  |  | — | may alloc |  |  |  |
+| `from_utf8_unchecked` |  | unsafe | — | no (takes Vec) |  |  | unsafe: UB if invalid UTF-8 |
+| `insert` |  |  | `&mut self` | may realloc | Note that calling this in a loop can result in quadratic behavior. |  | Panics if `idx` is larger than the `String`'s length, or if it does not lie on a [`char`] boundary. |
+| `insert_str` |  |  | `&mut self` | may realloc | Note that calling this in a loop can result in quadratic behavior. |  | Panics if `idx` is larger than the `String`'s length, or if it does not lie on a [`char`] boundary. |
+| `into_boxed_str` |  |  | `self` | may realloc |  |  |  |
+| `into_bytes` | const |  | `self` | no |  |  |  |
+| `into_chars` |  |  | `self` |  |  |  |  |
+| `into_raw_parts` |  |  | `self` | no |  |  |  |
+| `is_empty` | const |  | `&self` |  |  |  |  |
+| `leak` |  |  | `self` | no (leaks) |  |  |  |
+| `len` | const |  | `&self` |  |  |  |  |
+| `new` | const |  | — | no |  |  |  |
+| `pop` |  |  | `&mut self` |  |  | Option |  |
+| `push` |  |  | `&mut self` | may realloc |  |  | Panics if the new capacity exceeds `isize::MAX` _bytes_. |
+| `push_str` |  |  | `&mut self` | may realloc |  |  | Panics if the new capacity exceeds `isize::MAX` _bytes_. |
+| `remove` |  |  | `&mut self` |  | Note that calling this in a loop can result in quadratic behavior. |  | Panics if `idx` is larger than or equal to the `String`'s length, or if it does not lie on a [`char`] boundary. |
+| `remove_matches` |  |  | `&mut self` |  |  |  |  |
+| `replace_first` |  |  | `&mut self` | may realloc |  |  |  |
+| `replace_last` |  |  | `&mut self` | may realloc |  |  |  |
+| `replace_range` |  |  | `&mut self` | may realloc |  |  | Panics if the range has `start_bound > end_bound`, or, if the range is bounded on either end and does not lie on a [`char`] boundary. |
+| `reserve` |  |  | `&mut self` | may realloc |  |  | Panics if the new capacity exceeds `isize::MAX` _bytes_. |
+| `reserve_exact` |  |  | `&mut self` | may realloc |  |  | Panics if the new capacity exceeds `isize::MAX` _bytes_. |
+| `retain` |  |  | `&mut self` |  |  |  |  |
+| `shrink_to` |  |  | `&mut self` | may dealloc |  |  |  |
+| `shrink_to_fit` |  |  | `&mut self` | may dealloc |  |  |  |
+| `split_off` |  |  | `&mut self` | alloc |  |  | Panics if `at` is not on a `UTF-8` code point boundary, or if it is beyond the last code point of the string. |
+| `truncate` |  |  | `&mut self` |  |  |  | Panics if `new_len` does not lie on a [`char`] boundary. |
+| `try_reserve` |  |  | `&mut self` | may realloc |  | Result |  |
+| `try_reserve_exact` |  |  | `&mut self` | may realloc |  | Result |  |
+| `try_with_capacity` |  |  | — | alloc |  | Result |  |
+| `with_capacity` |  |  | — | alloc |  |  | Panics if the capacity exceeds `isize::MAX` _bytes_. |
 
 

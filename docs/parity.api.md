@@ -15,7 +15,7 @@ sound and its performance intent intact.
     - **fallible** APIs (`try_push_str`, `try_push`) and
     - **infallible ergonomics** that may **panic on overflow** (`push_str`, `push`), mirroring how `String` may panic on
       OOM in practice.
-- **Unsafe policy**: every `unsafe {}` must have a local `// SAFETY:` comment describing the invariant that makes it
+- **Unsafe policy**: every `unsafe { ... }` block must have a local `// SAFETY:` comment describing the invariant that makes it
   sound; tests should cover UTF‑8 boundaries and capacity edges.
 
 Note: some “compatibility” conversions (e.g. consuming `SmartString` into `Rc<str>` / `Arc<str>`) may inherently require

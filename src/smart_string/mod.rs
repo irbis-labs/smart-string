@@ -397,11 +397,23 @@ impl<const N: usize> SmartString<N> {
     }
 
     #[inline]
-    pub fn retain<F>(&mut self, f: F)
+    pub fn retain<F>(&mut self, mut f: F)
     where
         F: FnMut(char) -> bool,
     {
-        self.ensure_heap_mut().retain(f);
+        match self {
+            Self::Heap(s) => s.retain(f),
+            Self::Stack(s) => {
+                // `retain` can only keep or delete existing characters, so it cannot overflow capacity.
+                let mut out = PascalString::<N>::new();
+                for ch in s.as_str().chars() {
+                    if f(ch) {
+                        out.try_push(ch).expect("retain cannot overflow");
+                    }
+                }
+                *s = out;
+            }
+        }
     }
 
     #[inline]
@@ -414,8 +426,35 @@ impl<const N: usize> SmartString<N> {
 
     #[inline]
     pub fn split_off(&mut self, at: usize) -> Self {
-        let other = self.ensure_heap_mut().split_off(at);
-        SmartString::from(other).try_into_stack()
+        match self {
+            Self::Heap(s) => {
+                let len = s.len();
+                assert!(at <= len, "index out of bounds");
+                assert!(s.is_char_boundary(at), "index is not a char boundary");
+
+                // Optimization: if the tail fits on the stack, avoid allocating a new `String` via
+                // `String::split_off`. Instead, copy the tail into a `PascalString` and truncate in place.
+                let tail = &s[at..];
+                if tail.len() <= N {
+                    let other = PascalString::try_from(tail)
+                        .expect("tail length checked against stack capacity");
+                    s.truncate(at);
+                    return SmartString::Stack(other);
+                }
+
+                SmartString::Heap(s.split_off(at))
+            }
+            Self::Stack(s) => {
+                let len = s.len();
+                assert!(at <= len, "index out of bounds");
+                assert!(s.is_char_boundary(at), "index is not a char boundary");
+                let tail = &s.as_str()[at..];
+                let other = PascalString::try_from(tail)
+                    .expect("tail of a PascalString must fit within the same capacity");
+                s.truncate(at);
+                SmartString::Stack(other)
+            }
+        }
     }
 
     #[inline]
@@ -423,7 +462,31 @@ impl<const N: usize> SmartString<N> {
     where
         R: std::ops::RangeBounds<usize>,
     {
-        self.ensure_heap_mut().replace_range(range, replace_with);
+        let s = self.as_str();
+        let len = s.len();
+
+        let start = match range.start_bound() {
+            std::ops::Bound::Included(&n) => n,
+            std::ops::Bound::Excluded(&n) => n + 1,
+            std::ops::Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            std::ops::Bound::Included(&n) => n + 1,
+            std::ops::Bound::Excluded(&n) => n,
+            std::ops::Bound::Unbounded => len,
+        };
+
+        match self {
+            Self::Heap(s) => s.replace_range(start..end, replace_with),
+            Self::Stack(ps) => match ps.try_replace_range_bounds(start, end, replace_with) {
+                Ok(()) => (),
+                Err(pascal_string::ReplaceRangeError::TooLong) => {
+                    self.ensure_heap_mut()
+                        .replace_range(start..end, replace_with);
+                }
+                Err(_) => panic!("invalid range or char boundary"),
+            },
+        }
     }
 }
 
@@ -1110,6 +1173,28 @@ mod tests {
         assert_eq!(s.as_str(), "hello");
         assert_eq!(other.as_str(), "!");
         assert!(other.is_stack());
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_split_off_on_heap_avoids_alloc_when_tail_fits_stack() {
+        let mut s = SmartString::<4>::from("abcde"); // heap (len 5 > 4)
+        assert!(s.is_heap());
+
+        let other = s.split_off(4); // tail is "e" (fits stack)
+        assert_eq!(s.as_str(), "abcd");
+        assert!(s.is_heap()); // no implicit demotion
+        assert_eq!(other.as_str(), "e");
+        assert!(other.is_stack());
+    }
+
+    #[test]
+    fn test_retain_keeps_stack_when_possible() {
+        let mut s = SmartString::<8>::from("a1b2c3");
+        assert!(s.is_stack());
+        s.retain(|ch| ch.is_ascii_alphabetic());
+        assert_eq!(s.as_str(), "abc");
+        assert!(s.is_stack());
     }
 
     #[test]
@@ -1117,6 +1202,7 @@ mod tests {
         let mut s = SmartString::<8>::from("ab");
         s.replace_range(1..1, "cd");
         assert_eq!(s.as_str(), "acdb");
+        assert!(s.is_stack());
     }
 
     #[test]

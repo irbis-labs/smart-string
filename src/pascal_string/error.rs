@@ -28,6 +28,17 @@ pub enum RemoveError {
     NotCharBoundary { idx: usize },
 }
 
+/// An error returned by replace-range operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplaceRangeError {
+    /// The range bounds are invalid or out of bounds.
+    OutOfBounds { start: usize, end: usize, len: usize },
+    /// The range start or end is not on a UTF-8 character boundary.
+    NotCharBoundary { idx: usize },
+    /// The result would exceed the fixed capacity.
+    TooLong,
+}
+
 /// An error returned when a conversion from a `&[u8]` to a `PascalString` fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TryFromBytesError {
@@ -78,6 +89,20 @@ impl fmt::Display for RemoveError {
                 write!(f, "index out of bounds: idx={idx}, len={len}")
             }
             RemoveError::NotCharBoundary { idx } => write!(f, "index is not a char boundary: idx={idx}"),
+        }
+    }
+}
+
+impl fmt::Display for ReplaceRangeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ReplaceRangeError::OutOfBounds { start, end, len } => {
+                write!(f, "range out of bounds: start={start}, end={end}, len={len}")
+            }
+            ReplaceRangeError::NotCharBoundary { idx } => {
+                write!(f, "index is not a char boundary: idx={idx}")
+            }
+            ReplaceRangeError::TooLong => f.write_str("string too long"),
         }
     }
 }

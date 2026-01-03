@@ -20,6 +20,7 @@ mod with_serde;
 pub use error::TryFromBytesError;
 pub use error::InsertError;
 pub use error::RemoveError;
+pub use error::ReplaceRangeError;
 pub use error::TryFromStrError;
 
 #[derive(Clone, Copy)]
@@ -30,6 +31,129 @@ pub struct PascalString<const CAPACITY: usize> {
 }
 
 impl<const CAPACITY: usize> PascalString<CAPACITY> {
+    #[inline]
+    fn validate_range_bounds(
+        &self,
+        start: usize,
+        end: usize,
+    ) -> Result<(), ReplaceRangeError> {
+        let len = self.len();
+        if start > end || end > len {
+            return Err(ReplaceRangeError::OutOfBounds { start, end, len });
+        }
+        if !self.is_char_boundary(start) {
+            return Err(ReplaceRangeError::NotCharBoundary { idx: start });
+        }
+        if !self.is_char_boundary(end) {
+            return Err(ReplaceRangeError::NotCharBoundary { idx: end });
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn try_replace_range_bounds_impl(
+        &mut self,
+        start: usize,
+        end: usize,
+        replace_with: &str,
+    ) -> Result<(), ReplaceRangeError> {
+        self.validate_range_bounds(start, end)?;
+
+        let len = self.len();
+        let range_len = end - start;
+        let repl_len = replace_with.len();
+        let new_len = len - range_len + repl_len;
+        if new_len > CAPACITY {
+            return Err(ReplaceRangeError::TooLong);
+        }
+
+        if repl_len > range_len {
+            let delta = repl_len - range_len;
+            self.data.copy_within(end..len, end + delta);
+        } else if repl_len < range_len {
+            let new_tail_start = start + repl_len;
+            self.data.copy_within(end..len, new_tail_start);
+            // deterministic tail bytes
+            self.data[new_len..len].fill(0);
+        }
+
+        self.data[start..start + repl_len].copy_from_slice(replace_with.as_bytes());
+        self.len = new_len as u8;
+        Ok(())
+    }
+
+    /// Replaces the specified byte range with `replace_with`.
+    ///
+    /// This is a true `try_` API: it **never panics**. All failure modes are returned as `ReplaceRangeError`.
+    #[inline]
+    pub fn try_replace_range_bounds(
+        &mut self,
+        start: usize,
+        end: usize,
+        replace_with: &str,
+    ) -> Result<(), ReplaceRangeError> {
+        self.try_replace_range_bounds_impl(start, end, replace_with)
+    }
+
+    /// Replaces the specified byte range with a prefix of `replace_with` that fits in capacity.
+    ///
+    /// Returns the remainder of `replace_with` that did not fit.
+    ///
+    /// This is a true `try_` API: it **never panics**. Range/boundary errors are returned as `ReplaceRangeError`.
+    #[inline]
+    pub fn try_replace_range_bounds_truncated<'s>(
+        &mut self,
+        start: usize,
+        end: usize,
+        replace_with: &'s str,
+    ) -> Result<&'s str, ReplaceRangeError> {
+        self.validate_range_bounds(start, end)?;
+
+        let len = self.len();
+        let range_len = end - start;
+        let max_repl_len = CAPACITY - (len - range_len);
+        if replace_with.len() <= max_repl_len {
+            self.try_replace_range_bounds_impl(start, end, replace_with)?;
+            return Ok("");
+        }
+
+        let mut prefix_len = 0;
+        for c in replace_with.chars() {
+            let l = c.len_utf8();
+            if prefix_len + l > max_repl_len {
+                break;
+            }
+            prefix_len += l;
+        }
+
+        let (prefix, remainder) = replace_with.split_at(prefix_len);
+        self.try_replace_range_bounds_impl(start, end, prefix)?;
+        Ok(remainder)
+    }
+
+    /// Panicking variant of `try_replace_range_bounds`.
+    #[inline]
+    pub fn replace_range_bounds_expect_capacity(
+        &mut self,
+        start: usize,
+        end: usize,
+        replace_with: &str,
+    ) {
+        self.try_replace_range_bounds(start, end, replace_with)
+            .expect("PascalString replace_range failed");
+    }
+
+    /// Panicking + truncating variant of `try_replace_range_bounds_truncated`.
+    #[inline]
+    pub fn replace_range_bounds_truncated<'s>(
+        &mut self,
+        start: usize,
+        end: usize,
+        replace_with: &'s str,
+    ) -> &'s str {
+        self.try_replace_range_bounds_truncated(start, end, replace_with)
+            .expect("invalid range or char boundary")
+    }
     pub const CAPACITY: usize = {
         assert!(
             CAPACITY <= u8::MAX as usize,
@@ -827,6 +951,15 @@ mod tests {
         let err = ps.try_insert_str(1, "€").unwrap_err(); // would become 5 bytes
         assert_eq!(err, InsertError::TooLong);
         assert_eq!(ps.as_str(), "ab");
+    }
+
+    #[test]
+    fn test_try_replace_range_bounds_truncated() {
+        let mut ps = PascalString::<4>::try_from("ab").unwrap();
+        // Replace empty range at idx=1 with "cde" => only "cd" fits.
+        let rem = ps.try_replace_range_bounds_truncated(1, 1, "cde").unwrap();
+        assert_eq!(ps.as_str(), "acdb");
+        assert_eq!(rem, "e");
     }
 
     #[test]

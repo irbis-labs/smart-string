@@ -19,7 +19,7 @@ Notes:
 
 | `String` method | Match | SmartString method (full match) | Additional / alternative methods | Implemented |
 |---|---:|---|---|---:|
-| `as_bytes` | ✅ | *(via `Deref<Target=str>` → `as_bytes()`)* | `as_ref::<[u8]>()` | 🟡 |
+| `as_bytes` | ✅ | `as_bytes` | `as_ref::<[u8]>()` | ✅ |
 | `as_mut_str` | ✅ | `as_mut_str` | *(also `DerefMut<Target=str>`)* | ✅ |
 | `as_mut_vec` | ✅ | — | *(possible by forcing heap: `s.into_heap()` then `String::as_mut_vec` (unsafe))* | ❌ |
 | `as_str` | ✅ | `as_str` | *(also `Deref<Target=str>`)* | ✅ |
@@ -36,7 +36,7 @@ Notes:
 | `from_utf16le_lossy` | ✅ | — | *(can be implemented by delegating to `String::from_utf16le_lossy`)* | ❌ |
 | `from_utf8` | ✅ | `from_utf8` | — | ✅ |
 | `from_utf8_lossy` | ✅ | `from_utf8_lossy` | — | ✅ |
-| `from_utf8_lossy_owned` | ✅ | — | *(can be implemented by delegating to `String::from_utf8_lossy_owned`)* | ❌ |
+| `from_utf8_lossy_owned` | ✅ | `from_utf8_lossy_owned` | — | ✅ |
 | `from_utf8_unchecked` | ✅ | — | *(possible by forcing heap and delegating; unsafe API)* | ❌ |
 | `insert` | ✅ | `insert` | `insert_str_truncated` (SmartString-only helper for stack paths) | ✅ |
 | `insert_str` | ✅ | `insert_str` | `insert_str_truncated`, `try_insert_str_truncated` | ✅ |
@@ -65,7 +65,7 @@ Notes:
 | `truncate` | ✅ | `truncate` | — | ✅ |
 | `try_reserve` | ✅ | `try_reserve` | — | ✅ |
 | `try_reserve_exact` | ✅ | `try_reserve_exact` | — | ✅ |
-| `try_with_capacity` | ✅ | — | *(can be implemented by delegating to `String::try_with_capacity` when allocating heap)* | ❌ |
+| `try_with_capacity` | ✅ | `try_with_capacity` | — | ✅ |
 | `with_capacity` | ✅ | `with_capacity` | — | ✅ |
 
 

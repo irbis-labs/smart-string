@@ -18,7 +18,7 @@ Notes:
 
 | `String` method | Match | PascalString method (full match) | Additional / alternative methods | Implemented |
 |---|---:|---|---|---:|
-| `as_bytes` | ✅ | *(via `Deref<Target=str>` → `as_bytes()`)* | `as_ref::<[u8]>()` | 🟡 |
+| `as_bytes` | ✅ | `as_bytes` | `as_ref::<[u8]>()` | ✅ |
 | `as_mut_str` | ✅ | `as_mut_str` | *(also `DerefMut<Target=str>` provides `&mut str`)* | ✅ |
 | `as_mut_vec` | 🚫 | — | *(would expose raw bytes and break UTF‑8 invariant unless heavily constrained / unsafe)* | ❌ |
 | `as_str` | ✅ | `as_str` | *(also `Deref<Target=str>`)* | ✅ |
@@ -57,7 +57,7 @@ Notes:
 | `replace_range` | 🚫 | — | `try_replace_range_bounds`, `try_replace_range_bounds_truncated`, `replace_range_bounds_expect_capacity` | 🟡 |
 | `reserve` | 🚫 | — | *(no-op if within capacity; otherwise cannot)* | ❌ |
 | `reserve_exact` | 🚫 | — | — | ❌ |
-| `retain` | 🚫 | — | *(could be implemented as `retain`/`try_retain` since it cannot overflow; not present yet)* | ❌ |
+| `retain` | ✅ | `retain` | — | ✅ |
 | `shrink_to` | 🚫 | — | *(no-op for fixed-capacity)* | ❌ |
 | `shrink_to_fit` | 🚫 | — | *(no-op for fixed-capacity)* | ❌ |
 | `split_off` | 🚫 | — | *(could be implemented as `try_split_off` returning two PascalStrings when both fit)* | ❌ |

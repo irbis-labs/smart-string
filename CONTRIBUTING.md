@@ -59,4 +59,28 @@ When changing behavior around storage, UTF-8 boundaries, or unsafe code paths, p
 - UTF-8 boundary conditions (multi-byte characters; truncation should never split a codepoint)
 - serde roundtrips (when the `serde` feature is enabled)
 
+## Decision notes (required)
+
+This crate intentionally targets a relatively low **MSRV** and maintains strict UTF-8 / capacity invariants.
+That means we sometimes implement **alternative equivalents** instead of using the most direct upstream `std`
+APIs (or we intentionally avoid some APIs entirely).
+
+When you add or modify code that is any of the following:
+
+- an alternative implementation due to **MSRV**, stability, platform/toolchain constraints, or representation safety
+- an architectural / performance decision that changes semantics (promotion/demotion, allocations, invariants)
+- a deliberate deviation from upstream `String` / `str` ergonomics
+
+you must add an explicit note in the code **near the decision point** (doc comment or `// NOTE:`) that answers:
+
+- **Why** this approach was chosen
+- **What versions/constraints** matter (e.g. “MSRV is 1.59; API X is available since 1.70”)
+- **When to revisit** (e.g. “revisit after MSRV bump”, “revisit if perf data shows it hot”)
+
+Rationale:
+
+- It prevents “drive-by refactors” from breaking MSRV or invariants.
+- It reduces confusion when a non-obvious implementation looks like a copy/paste bug.
+- Our test coverage is improving, but incomplete; explicit intent helps reviewers catch mistakes.
+
 

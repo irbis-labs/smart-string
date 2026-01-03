@@ -65,6 +65,33 @@ impl<const N: usize> SmartString<N> {
         }
     }
 
+    /// Fallible version of `with_capacity`.
+    ///
+    /// This never panics; allocation failures are returned as `TryReserveError`.
+    ///
+    /// ## Note on `String::try_with_capacity`
+    ///
+    /// Newer Rust versions provide `String::try_with_capacity`, but this crate’s MSRV is **Rust 1.59**
+    /// (see crate `README.md`). To keep `SmartString::try_with_capacity` available under MSRV, we
+    /// implement the equivalent semantics via `String::new()` + `try_reserve_exact`, which is
+    /// available starting from **Rust 1.57**.
+    ///
+    /// When MSRV is bumped to a version where `String::try_with_capacity` is available, this should
+    /// be revisited for closer upstream parity and to reduce “looks like a copy/paste bug” risk.
+    #[inline]
+    pub fn try_with_capacity(
+        capacity: usize,
+    ) -> Result<Self, std::collections::TryReserveError> {
+        if capacity <= N {
+            return Ok(Self::new());
+        }
+
+        let mut s = String::new();
+        // NOTE(MSRV): use `try_reserve_exact` instead of `String::try_with_capacity` (not available on our MSRV).
+        s.try_reserve_exact(capacity)?;
+        Ok(Self::Heap(s))
+    }
+
     #[inline]
     pub fn from_utf8(vec: Vec<u8>) -> Result<Self, FromUtf8Error> {
         String::from_utf8(vec).map(Self::Heap)
@@ -95,6 +122,16 @@ impl<const N: usize> SmartString<N> {
     #[must_use]
     pub fn as_str(&self) -> &str {
         self
+    }
+
+    /// Returns the underlying UTF-8 bytes.
+    ///
+    /// This is equivalent to `self.as_str().as_bytes()`, but provided as an inherent method for
+    /// `std::string::String` API parity and rustdoc discoverability.
+    #[inline]
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.as_str().as_bytes()
     }
 
     #[inline]
@@ -198,7 +235,6 @@ impl<const N: usize> SmartString<N> {
         }
     }
 
-    #[rustversion::since(1.57)]
     pub fn try_reserve(
         &mut self,
         additional: usize,
@@ -217,7 +253,6 @@ impl<const N: usize> SmartString<N> {
         }
     }
 
-    #[rustversion::since(1.57)]
     pub fn try_reserve_exact(
         &mut self,
         additional: usize,
@@ -321,6 +356,27 @@ impl<const N: usize> SmartString<N> {
     #[must_use]
     pub fn from_utf8_lossy(v: &[u8]) -> Cow<'_, str> {
         String::from_utf8_lossy(v)
+    }
+
+    /// Like `String::from_utf8_lossy_owned`: consumes the byte buffer and returns an owned string,
+    /// replacing invalid sequences with U+FFFD.
+    ///
+    /// This never panics. The returned value uses the stack variant when it fits.
+    #[inline]
+    #[must_use]
+    pub fn from_utf8_lossy_owned(v: Vec<u8>) -> Self {
+        let owned = match String::from_utf8(v) {
+            Ok(s) => s,
+            Err(e) => String::from_utf8_lossy(&e.into_bytes()).into_owned(),
+        };
+
+        if owned.len() <= N {
+            // Avoid panics: fall back to heap on unexpected conversion failure.
+            if let Ok(ps) = PascalString::<N>::try_from(owned.as_str()) {
+                return Self::Stack(ps);
+            }
+        }
+        Self::Heap(owned)
     }
 
     #[inline]
@@ -1063,7 +1119,6 @@ mod tests {
         assert!(s.is_stack());
     }
 
-    #[rustversion::since(1.57)]
     #[test]
     fn test_try_reserve_transitions_stack_to_heap() {
         let mut s = SmartString::<4>::from("ab");
@@ -1079,7 +1134,6 @@ mod tests {
         assert_eq!(s.as_str(), "ab");
     }
 
-    #[rustversion::since(1.57)]
     #[test]
     fn test_try_reserve_exact_transitions_stack_to_heap() {
         let mut s = SmartString::<4>::from("ab");
@@ -1256,6 +1310,29 @@ mod tests {
 
         let s = SmartString::<4>::from_utf8_lossy(&[0xff]);
         assert!(matches!(s, Cow::Owned(_)));
+    }
+
+    #[test]
+    fn test_from_utf8_lossy_owned_picks_stack_when_possible() {
+        let s = SmartString::<4>::from_utf8_lossy_owned(b"ab".to_vec());
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "ab");
+
+        // U+FFFD is 3 bytes, so it fits into capacity=4.
+        let s = SmartString::<4>::from_utf8_lossy_owned(vec![0xff]);
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "�");
+    }
+
+    #[test]
+    fn test_try_with_capacity_picks_stack_or_heap() {
+        let s = SmartString::<4>::try_with_capacity(3).unwrap();
+        assert!(s.is_stack());
+        assert_eq!(s.capacity(), 4);
+
+        let s = SmartString::<4>::try_with_capacity(10).unwrap();
+        assert!(s.is_heap());
+        assert!(s.capacity() >= 10);
     }
 
     #[test]

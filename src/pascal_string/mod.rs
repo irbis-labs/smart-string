@@ -240,6 +240,16 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
         self
     }
 
+    /// Returns the underlying UTF-8 bytes.
+    ///
+    /// This is equivalent to `self.as_str().as_bytes()`, but provided as an inherent method for
+    /// `std::string::String` API parity and rustdoc discoverability.
+    #[inline]
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.as_str().as_bytes()
+    }
+
     #[inline(always)]
     pub fn as_mut_str(&mut self) -> &mut str {
         self
@@ -505,6 +515,42 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     #[inline]
     pub fn clear(&mut self) {
         self.len = 0;
+    }
+
+    /// Retains only the characters specified by the predicate.
+    ///
+    /// This never panics and cannot overflow capacity, because the resulting string is never longer
+    /// than the original.
+    #[inline]
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        F: FnMut(char) -> bool,
+    {
+        let len = self.len();
+
+        // Copy the current contents so we can iterate without aliasing `self.data`.
+        let mut src = [0_u8; CAPACITY];
+        src[..len].copy_from_slice(&self.data[..len]);
+
+        // SAFETY: `src[..len]` was copied from a `PascalString` which maintains UTF-8 invariants.
+        let s = unsafe { from_utf8_unchecked(&src[..len]) };
+
+        let mut write = 0_usize;
+        let mut buf = [0_u8; 4];
+        for ch in s.chars() {
+            if f(ch) {
+                let part = ch.encode_utf8(&mut buf);
+                let bytes = part.as_bytes();
+                let end = write + bytes.len();
+                // `write` only advances by bytes from the original string, so `end <= len <= CAPACITY`.
+                self.data[write..end].copy_from_slice(bytes);
+                write = end;
+            }
+        }
+
+        // Deterministic tail bytes.
+        self.data[write..len].fill(0);
+        self.len = write as u8;
     }
 }
 
@@ -923,6 +969,13 @@ mod tests {
         let mut ps = PascalString::<4>::try_from("ab").unwrap();
         ps.as_mut_str().make_ascii_uppercase();
         assert_eq!(ps.as_str(), "AB");
+    }
+
+    #[test]
+    fn test_retain_filters_in_place() {
+        let mut ps = PascalString::<8>::try_from("a1b2c3").unwrap();
+        ps.retain(|ch| ch.is_ascii_alphabetic());
+        assert_eq!(ps.as_str(), "abc");
     }
 
     #[test]

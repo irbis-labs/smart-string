@@ -97,25 +97,15 @@ impl<const N: usize> SmartString<N> {
         String::from_utf8(vec).map(Self::Heap)
     }
 
-    // TBD What to do with this?
-    // #[cfg(not(no_global_oom_handling))]
-    // #[inline]
-    // #[must_use]
-    // pub fn from_utf8_lossy(v: &[u8]) -> Cow<'_, str> {
-    //     match String::from_utf8_lossy(v) {
-    //         Cow::Borrowed(s) => Cow::Borrowed(s),
-    //         Cow::Owned(s) => Cow::Owned(Self::Heap(s)),
-    //     }
-    // }
-
     pub fn from_utf16(v: &[u16]) -> Result<Self, FromUtf16Error> {
-        String::from_utf16(v).map(Self::Heap)
+        String::from_utf16(v).map(|s| Self::from(s.as_str()))
     }
 
     #[must_use]
     #[inline]
     pub fn from_utf16_lossy(v: &[u16]) -> Self {
-        Self::Heap(String::from_utf16_lossy(v))
+        let s = String::from_utf16_lossy(v);
+        Self::from(s.as_str())
     }
 
     #[inline]

@@ -63,7 +63,7 @@ show up hot in profiling, we should document the cost model and optimize where p
   - [x] `retain` (stack-aware)
   - [x] `replace_range` (operates on stack when it fits; promotes to heap on overflow)
   - [x] `split_off` (stack-aware)
-  - [ ] `drain` (currently promotes to heap and delegates)
+  - [x] `drain` (promotes to heap and delegates)
   - [x] `into_bytes`, `into_string` (consuming conversions)
   - [x] `into_boxed_str`, `leak`, `from_utf8_lossy`
   - [ ] `as_mut_vec` (likely **out of scope**; would expose raw bytes and complicate UTF‑8 invariants)

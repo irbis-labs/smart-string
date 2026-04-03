@@ -2035,6 +2035,133 @@ mod tests {
         assert_eq!(s.as_str(), "Hi");
     }
 
+    // -- proptest: UTF-16 decode properties -----------------------------------------------------------
+
+    mod proptest_utf16 {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        /// Encode a string as UTF-16 big-endian bytes.
+        fn encode_utf16be(s: &str) -> Vec<u8> {
+            let mut bytes = Vec::new();
+            for u in s.encode_utf16() {
+                bytes.extend_from_slice(&u.to_be_bytes());
+            }
+            bytes
+        }
+
+        /// Encode a string as UTF-16 little-endian bytes.
+        fn encode_utf16le(s: &str) -> Vec<u8> {
+            let mut bytes = Vec::new();
+            for u in s.encode_utf16() {
+                bytes.extend_from_slice(&u.to_le_bytes());
+            }
+            bytes
+        }
+
+        /// Reference decode: convert &[u8] (BE) to &[u16], then use String::from_utf16.
+        fn reference_decode_be(bytes: &[u8]) -> Result<String, ()> {
+            if bytes.len() % 2 != 0 {
+                return Err(());
+            }
+            let u16s: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect();
+            String::from_utf16(&u16s).map_err(|_| ())
+        }
+
+        /// Reference decode: convert &[u8] (LE) to &[u16], then use String::from_utf16.
+        fn reference_decode_le(bytes: &[u8]) -> Result<String, ()> {
+            if bytes.len() % 2 != 0 {
+                return Err(());
+            }
+            let u16s: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            String::from_utf16(&u16s).map_err(|_| ())
+        }
+
+        proptest! {
+            // Round-trip: encode valid string → decode → same string
+            #[test]
+            fn roundtrip_be(s in "\\PC{0,100}") {
+                let bytes = encode_utf16be(&s);
+                let decoded = SmartString::<30>::from_utf16be(&bytes).unwrap();
+                prop_assert_eq!(decoded.as_str(), s.as_str());
+            }
+
+            #[test]
+            fn roundtrip_le(s in "\\PC{0,100}") {
+                let bytes = encode_utf16le(&s);
+                let decoded = SmartString::<30>::from_utf16le(&bytes).unwrap();
+                prop_assert_eq!(decoded.as_str(), s.as_str());
+            }
+
+            // Match reference: for arbitrary even-length bytes, our BE decode agrees with std
+            #[test]
+            fn matches_reference_be(bytes in proptest::collection::vec(any::<u8>(), 0..200)) {
+                let ref_result = reference_decode_be(&bytes);
+                let our_result = SmartString::<30>::from_utf16be(&bytes);
+                match (ref_result, our_result) {
+                    (Ok(ref_s), Ok(our_s)) => prop_assert_eq!(ref_s.as_str(), our_s.as_str()),
+                    (Err(_), Err(_)) => {} // both reject — fine
+                    (Ok(_), Err(_)) => {
+                        // Odd-length bytes: reference skips them, we reject. That's OK
+                        // since reference_decode_be also returns Err on odd length.
+                        prop_assert!(false, "reference accepted but we rejected");
+                    }
+                    (Err(_), Ok(_)) => {
+                        prop_assert!(false, "we accepted but reference rejected");
+                    }
+                }
+            }
+
+            #[test]
+            fn matches_reference_le(bytes in proptest::collection::vec(any::<u8>(), 0..200)) {
+                let ref_result = reference_decode_le(&bytes);
+                let our_result = SmartString::<30>::from_utf16le(&bytes);
+                match (ref_result, our_result) {
+                    (Ok(ref_s), Ok(our_s)) => prop_assert_eq!(ref_s.as_str(), our_s.as_str()),
+                    (Err(_), Err(_)) => {}
+                    (Ok(_), Err(_)) => prop_assert!(false, "reference accepted but we rejected"),
+                    (Err(_), Ok(_)) => prop_assert!(false, "we accepted but reference rejected"),
+                }
+            }
+
+            // Lossy always produces valid UTF-8, never panics
+            #[test]
+            fn lossy_be_never_panics(bytes in proptest::collection::vec(any::<u8>(), 0..200)) {
+                let result = SmartString::<30>::from_utf16be_lossy(&bytes);
+                // If it didn't panic, the string is valid UTF-8 by construction (it's a SmartString).
+                prop_assert!(result.len() <= result.as_str().len() + 1); // just access it
+            }
+
+            #[test]
+            fn lossy_le_never_panics(bytes in proptest::collection::vec(any::<u8>(), 0..200)) {
+                let result = SmartString::<30>::from_utf16le_lossy(&bytes);
+                prop_assert!(result.len() <= result.as_str().len() + 1);
+            }
+
+            // Stack-awareness: short decoded strings land on stack
+            #[test]
+            fn short_strings_on_stack_be(s in "[a-z]{0,10}") {
+                let bytes = encode_utf16be(&s);
+                let decoded = SmartString::<30>::from_utf16be(&bytes).unwrap();
+                prop_assert!(decoded.is_stack(), "expected stack for {:?} (len {})", s, s.len());
+            }
+
+            #[test]
+            fn short_strings_on_stack_le(s in "[a-z]{0,10}") {
+                let bytes = encode_utf16le(&s);
+                let decoded = SmartString::<30>::from_utf16le(&bytes).unwrap();
+                prop_assert!(decoded.is_stack(), "expected stack for {:?} (len {})", s, s.len());
+            }
+        }
+    }
+
     // -- drain tests ---------------------------------------------------------------------------------
 
     #[test]

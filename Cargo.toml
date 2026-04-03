@@ -35,3 +35,4 @@ rustversion = "1"
 
 [dev-dependencies]
 serde_json = "1"
+proptest = "1"

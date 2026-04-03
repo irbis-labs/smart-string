@@ -2036,7 +2036,9 @@ mod tests {
     }
 
     // -- proptest: UTF-16 decode properties -----------------------------------------------------------
+    // Skipped under Miri: proptest uses libc::getcwd which Miri's isolation blocks.
 
+    #[cfg(not(miri))]
     mod proptest_utf16 {
         use proptest::prelude::*;
 

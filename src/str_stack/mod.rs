@@ -2,10 +2,16 @@ use std::fmt;
 use std::str::from_utf8_unchecked;
 
 mod iter;
+pub mod str_list;
+pub mod str_list_ref;
 #[cfg(feature = "serde")]
 mod with_serde;
 
 pub use iter::StrStackIter;
+pub use str_list::StrList;
+pub use str_list::StrListIter;
+pub use str_list_ref::StrListRef;
+pub use str_list_ref::StrListValidationError;
 
 /// A lightweight snapshot of `StrStack` state for checkpoint/rollback.
 ///
@@ -265,6 +271,18 @@ impl StrStack {
     #[inline]
     pub fn iter(&self) -> StrStackIter<'_> {
         StrStackIter::new(self)
+    }
+
+    /// Internal: borrow the raw data buffer.
+    #[inline]
+    pub(crate) fn data_as_slice(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// Internal: borrow the raw ends buffer.
+    #[inline]
+    pub(crate) fn ends_as_slice(&self) -> &[u32] {
+        &self.ends
     }
 }
 

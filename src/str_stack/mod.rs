@@ -1,3 +1,66 @@
+//! A compact string collection backed by a single contiguous byte buffer.
+//!
+//! # Types
+//!
+//! - [`StrStack`]: mutable builder — push, pop, checkpoint/rollback, random access.
+//! - [`StrList`]: frozen immutable list (`Box<[u8]>` + `Box<[u32]>`), no excess capacity.
+//! - [`StrListRef`]: borrowed read-only view (`&[u8]` + `&[u32]`), zero-copy over external buffers.
+//!
+//! # Representation
+//!
+//! All types share the same logical structure:
+//! - `data`: a contiguous UTF-8 byte buffer containing all segments concatenated.
+//! - `ends`: a `u32` boundary table where `ends[i]` is the byte offset of the end of segment `i`.
+//!   Segment `i` occupies `data[ends[i-1]..ends[i]]` (with `ends[-1] = 0`).
+//!
+//! # Invariants (soundness-critical)
+//!
+//! - `data` is always valid UTF-8.
+//! - `ends` values are monotonically non-decreasing.
+//! - The last value in `ends` does not exceed `data.len()`.
+//!
+//! These invariants are maintained by construction (`push` only accepts `&str`)
+//! and by validation (`StrListRef::new` checks all three).
+//!
+//! # Limits
+//!
+//! The boundary table uses `u32`, limiting total content to ~4 GB.
+//! [`push`](StrStack::push) panics if this limit is exceeded;
+//! [`try_push`](StrStack::try_push) returns an error instead.
+//!
+//! # Complexity
+//!
+//! | Operation | Time | Notes |
+//! |-----------|------|-------|
+//! | `push` | O(n) | n = length of pushed string (byte copy) |
+//! | `get(i)` | O(1) | boundary lookup + slice projection |
+//! | `remove_top` | O(1) | amortized (truncates vecs) |
+//! | `checkpoint` | O(1) | captures two lengths |
+//! | `reset` | O(1) | amortized (truncates vecs) |
+//! | `truncate(k)` | O(1) | amortized |
+//! | `iter` | O(n) | n = number of segments |
+//! | `From<StrStack> for StrList` | O(n) | n = total bytes (box slice copy) |
+//!
+//! # Example
+//!
+//! ```
+//! use smart_string::StrStack;
+//!
+//! let mut stack = StrStack::new();
+//! stack.push("hello");
+//! stack.push("world");
+//!
+//! assert_eq!(stack.get(0), Some("hello"));
+//! assert_eq!(stack.last(), Some("world"));
+//! assert_eq!(stack.as_str(), "helloworld");
+//!
+//! // Checkpoint for speculative parsing
+//! let cp = stack.checkpoint();
+//! stack.push("tentative");
+//! stack.reset(cp); // rolls back "tentative"
+//! assert_eq!(stack.len(), 2);
+//! ```
+
 use std::fmt;
 use std::str::from_utf8_unchecked;
 

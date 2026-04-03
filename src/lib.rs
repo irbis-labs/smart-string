@@ -4,7 +4,9 @@
 //!
 //! - [`PascalString`]: fixed-capacity UTF-8 string stored inline (stack / in-place).
 //! - [`SmartString`]: stack-or-heap string that promotes to heap when needed.
-//! - [`StrStack`]: a compact “stack” of string slices backed by a single byte buffer.
+//! - [`StrStack`]: mutable builder for a compact list of string segments in a single byte buffer.
+//! - [`StrList`]: frozen (immutable) string list with no excess capacity.
+//! - [`StrListRef`]: borrowed read-only view over string list data (zero-copy).
 //!
 //! ## Notes
 //!

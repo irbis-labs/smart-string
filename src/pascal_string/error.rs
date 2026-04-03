@@ -115,3 +115,25 @@ impl fmt::Display for TryFromBytesError {
         }
     }
 }
+
+/// An error returned by `try_split_off`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitOffError {
+    /// The index is outside the string bounds.
+    OutOfBounds { at: usize, len: usize },
+    /// The index is not on a UTF-8 character boundary.
+    NotCharBoundary { at: usize },
+}
+
+impl fmt::Display for SplitOffError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SplitOffError::OutOfBounds { at, len } => {
+                write!(f, "index out of bounds: at={at}, len={len}")
+            }
+            SplitOffError::NotCharBoundary { at } => {
+                write!(f, "index is not a char boundary: at={at}")
+            }
+        }
+    }
+}

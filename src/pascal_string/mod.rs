@@ -17,10 +17,11 @@ mod error;
 #[cfg(feature = "serde")]
 mod with_serde;
 
-pub use error::TryFromBytesError;
 pub use error::InsertError;
 pub use error::RemoveError;
 pub use error::ReplaceRangeError;
+pub use error::SplitOffError;
+pub use error::TryFromBytesError;
 pub use error::TryFromStrError;
 
 #[derive(Clone, Copy)]
@@ -32,11 +33,7 @@ pub struct PascalString<const CAPACITY: usize> {
 
 impl<const CAPACITY: usize> PascalString<CAPACITY> {
     #[inline]
-    fn validate_range_bounds(
-        &self,
-        start: usize,
-        end: usize,
-    ) -> Result<(), ReplaceRangeError> {
+    fn validate_range_bounds(&self, start: usize, end: usize) -> Result<(), ReplaceRangeError> {
         let len = self.len();
         if start > end || end > len {
             return Err(ReplaceRangeError::OutOfBounds { start, end, len });
@@ -256,7 +253,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline(always)]
-    #[deprecated(note = "Use `as_mut_str()` (this method name suggests `&mut str` but returns `&str`).")]
+    #[deprecated(
+        note = "Use `as_mut_str()` (this method name suggests `&mut str` but returns `&str`)."
+    )]
     pub fn as_str_mut(&mut self) -> &str {
         self
     }
@@ -286,7 +285,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     ///
     /// This mirrors `String::push_str`’s “cannot fail” ergonomics; use `try_push_str` if you want a recoverable error.
     #[inline]
-    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_push_str`, `push_str_truncated`, or `push_str_expect_capacity`.")]
+    #[deprecated(
+        note = "PascalString is fixed-capacity; prefer `try_push_str`, `push_str_truncated`, or `push_str_expect_capacity`."
+    )]
     pub fn push_str(&mut self, string: &str) {
         self.push_str_expect_capacity(string);
     }
@@ -295,7 +296,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     ///
     /// This mirrors `String::push`’s “cannot fail” ergonomics; use `try_push` if you want a recoverable error.
     #[inline]
-    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_push`, `push_str_truncated`, or `push_expect_capacity`.")]
+    #[deprecated(
+        note = "PascalString is fixed-capacity; prefer `try_push`, `push_str_truncated`, or `push_expect_capacity`."
+    )]
     pub fn push(&mut self, ch: char) {
         self.push_expect_capacity(ch);
     }
@@ -400,7 +403,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
 
     /// Inserts a string slice at the given byte index, panicking if the capacity would be exceeded.
     #[inline]
-    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_insert_str`, `try_insert_str_truncated`, or `insert_str_expect_capacity`.")]
+    #[deprecated(
+        note = "PascalString is fixed-capacity; prefer `try_insert_str`, `try_insert_str_truncated`, or `insert_str_expect_capacity`."
+    )]
     pub fn insert_str(&mut self, idx: usize, string: &str) {
         self.insert_str_expect_capacity(idx, string);
     }
@@ -424,7 +429,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
 
     /// Inserts a character at the given byte index, panicking if the capacity would be exceeded.
     #[inline]
-    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_insert`, `try_insert_str_truncated`, or `insert_expect_capacity`.")]
+    #[deprecated(
+        note = "PascalString is fixed-capacity; prefer `try_insert`, `try_insert_str_truncated`, or `insert_expect_capacity`."
+    )]
     pub fn insert(&mut self, idx: usize, ch: char) {
         self.insert_expect_capacity(idx, ch);
     }
@@ -545,6 +552,101 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
                 // `write` only advances by bytes from the original string, so `end <= len <= CAPACITY`.
                 self.data[write..end].copy_from_slice(bytes);
                 write = end;
+            }
+        }
+
+        // Deterministic tail bytes.
+        self.data[write..len].fill(0);
+        self.len = write as u8;
+    }
+
+    /// Splits the string into two at the given byte index.
+    ///
+    /// Returns a new `PascalString` containing the bytes `[at, len)`.
+    /// `self` is truncated to `[0, at)`.
+    ///
+    /// # Panics
+    ///
+    /// - If `at > self.len()`
+    /// - If `at` is not on a UTF-8 character boundary
+    #[inline]
+    #[must_use]
+    pub fn split_off(&mut self, at: usize) -> PascalString<CAPACITY> {
+        assert!(
+            self.as_str().is_char_boundary(at),
+            "split_off: index {at} is not a char boundary (len={})",
+            self.len()
+        );
+        // `is_char_boundary` returns false for at > len, so the assert above covers that too.
+        // Build the tail before modifying self.
+        let tail = &self.as_str()[at..];
+        // SAFETY: tail is a substring of a valid PascalString; its length <= CAPACITY.
+        let result = PascalString::try_from(tail).expect("tail fits in same capacity");
+        self.truncate(at);
+        result
+    }
+
+    /// Non-panicking version of `split_off`.
+    ///
+    /// Returns `Err(SplitOffError)` if `at > self.len()` or `at` is not on a char boundary.
+    #[inline]
+    #[must_use]
+    pub fn try_split_off(&mut self, at: usize) -> Result<PascalString<CAPACITY>, SplitOffError> {
+        let len = self.len();
+        if at > len {
+            return Err(SplitOffError::OutOfBounds { at, len });
+        }
+        if !self.as_str().is_char_boundary(at) {
+            return Err(SplitOffError::NotCharBoundary { at });
+        }
+        // SAFETY: bounds and boundary already checked above.
+        let tail = &self.as_str()[at..];
+        let result = PascalString::try_from(tail).expect("tail fits in same capacity");
+        self.truncate(at);
+        Ok(result)
+    }
+
+    /// Removes all non-overlapping occurrences of `pat` from the string in place.
+    ///
+    /// If `pat` is empty, the string is unchanged.
+    ///
+    /// This never panics and cannot overflow capacity because the result is never longer than the
+    /// original.
+    #[inline]
+    pub fn remove_matches(&mut self, pat: &str) {
+        if pat.is_empty() {
+            return;
+        }
+        let len = self.len();
+        if len == 0 {
+            return;
+        }
+
+        // Copy the current contents so we can iterate without aliasing `self.data`.
+        let mut src = [0_u8; CAPACITY];
+        src[..len].copy_from_slice(&self.data[..len]);
+
+        // SAFETY: `src[..len]` was copied from a valid PascalString which maintains UTF-8.
+        let s = unsafe { std::str::from_utf8_unchecked(&src[..len]) };
+
+        let mut read = 0_usize;
+        let mut write = 0_usize;
+
+        while read < len {
+            if s[read..].starts_with(pat) {
+                read += pat.len();
+            } else {
+                // Advance by one char to avoid splitting multi-byte sequences.
+                let ch_len = s[read..]
+                    .chars()
+                    .next()
+                    .expect("read < len implies at least one char")
+                    .len_utf8();
+                // `write <= read`, so we can copy within the same buffer if we copy byte-by-byte
+                // through our snapshot `src`.
+                self.data[write..write + ch_len].copy_from_slice(&src[read..read + ch_len]);
+                write += ch_len;
+                read += ch_len;
             }
         }
 
@@ -1023,5 +1125,159 @@ mod tests {
 
         const TOO_LONG: Option<PascalString<2>> = PascalString::<2>::try_from_str_const("abc");
         assert!(TOO_LONG.is_none());
+    }
+
+    // -- split_off -------------------------------------------------------------------------------
+
+    #[test]
+    fn test_split_off_at_middle() {
+        let mut ps = PascalString::<8>::try_from("abcdef").unwrap();
+        let tail = ps.split_off(3);
+        assert_eq!(ps.as_str(), "abc");
+        assert_eq!(tail.as_str(), "def");
+    }
+
+    #[test]
+    fn test_split_off_at_zero() {
+        let mut ps = PascalString::<8>::try_from("hello").unwrap();
+        let tail = ps.split_off(0);
+        assert_eq!(ps.as_str(), "");
+        assert_eq!(tail.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_split_off_at_len() {
+        let mut ps = PascalString::<8>::try_from("hello").unwrap();
+        let len = ps.len();
+        let tail = ps.split_off(len);
+        assert_eq!(ps.as_str(), "hello");
+        assert_eq!(tail.as_str(), "");
+    }
+
+    #[test]
+    fn test_split_off_multibyte_boundary() {
+        // "€" is 3 bytes, "ab" is 2 bytes => total 5 bytes
+        let mut ps = PascalString::<8>::try_from("€ab").unwrap();
+        let tail = ps.split_off(3); // split after '€'
+        assert_eq!(ps.as_str(), "€");
+        assert_eq!(tail.as_str(), "ab");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_split_off_panics_on_non_char_boundary() {
+        let mut ps = PascalString::<8>::try_from("€ab").unwrap();
+        ps.split_off(1); // mid of 3-byte '€'
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_split_off_panics_at_gt_len() {
+        let mut ps = PascalString::<8>::try_from("abc").unwrap();
+        ps.split_off(10);
+    }
+
+    // -- try_split_off ---------------------------------------------------------------------------
+
+    #[test]
+    fn test_try_split_off_at_middle() {
+        let mut ps = PascalString::<8>::try_from("abcdef").unwrap();
+        let tail = ps.try_split_off(3).unwrap();
+        assert_eq!(ps.as_str(), "abc");
+        assert_eq!(tail.as_str(), "def");
+    }
+
+    #[test]
+    fn test_try_split_off_at_zero() {
+        let mut ps = PascalString::<8>::try_from("hello").unwrap();
+        let tail = ps.try_split_off(0).unwrap();
+        assert_eq!(ps.as_str(), "");
+        assert_eq!(tail.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_try_split_off_at_len() {
+        let mut ps = PascalString::<8>::try_from("hello").unwrap();
+        let len = ps.len();
+        let tail = ps.try_split_off(len).unwrap();
+        assert_eq!(ps.as_str(), "hello");
+        assert_eq!(tail.as_str(), "");
+    }
+
+    #[test]
+    fn test_try_split_off_multibyte_boundary() {
+        let mut ps = PascalString::<8>::try_from("€ab").unwrap();
+        let tail = ps.try_split_off(3).unwrap();
+        assert_eq!(ps.as_str(), "€");
+        assert_eq!(tail.as_str(), "ab");
+    }
+
+    #[test]
+    fn test_try_split_off_err_not_char_boundary() {
+        let mut ps = PascalString::<8>::try_from("€ab").unwrap();
+        let err = ps.try_split_off(1).unwrap_err();
+        assert_eq!(err, SplitOffError::NotCharBoundary { at: 1 });
+        // self is unchanged
+        assert_eq!(ps.as_str(), "€ab");
+    }
+
+    #[test]
+    fn test_try_split_off_err_out_of_bounds() {
+        let mut ps = PascalString::<8>::try_from("abc").unwrap();
+        let err = ps.try_split_off(10).unwrap_err();
+        assert_eq!(err, SplitOffError::OutOfBounds { at: 10, len: 3 });
+        assert_eq!(ps.as_str(), "abc");
+    }
+
+    // -- remove_matches --------------------------------------------------------------------------
+
+    #[test]
+    fn test_remove_matches_single() {
+        let mut ps = PascalString::<16>::try_from("hello world").unwrap();
+        ps.remove_matches("world");
+        assert_eq!(ps.as_str(), "hello ");
+    }
+
+    #[test]
+    fn test_remove_matches_multiple() {
+        let mut ps = PascalString::<16>::try_from("abcabcabc").unwrap();
+        ps.remove_matches("abc");
+        assert_eq!(ps.as_str(), "");
+    }
+
+    #[test]
+    fn test_remove_matches_no_match() {
+        let mut ps = PascalString::<16>::try_from("hello").unwrap();
+        ps.remove_matches("xyz");
+        assert_eq!(ps.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_remove_matches_empty_pat() {
+        let mut ps = PascalString::<8>::try_from("hello").unwrap();
+        ps.remove_matches("");
+        assert_eq!(ps.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_remove_matches_equals_whole_string() {
+        let mut ps = PascalString::<8>::try_from("hello").unwrap();
+        ps.remove_matches("hello");
+        assert_eq!(ps.as_str(), "");
+    }
+
+    #[test]
+    fn test_remove_matches_multibyte() {
+        let mut ps = PascalString::<16>::try_from("a€b€c").unwrap();
+        ps.remove_matches("€");
+        assert_eq!(ps.as_str(), "abc");
+    }
+
+    #[test]
+    fn test_remove_matches_non_overlapping() {
+        // "aaa" with pat "aa": first match consumes [0,2), leaving "a"
+        let mut ps = PascalString::<8>::try_from("aaa").unwrap();
+        ps.remove_matches("aa");
+        assert_eq!(ps.as_str(), "a");
     }
 }

@@ -32,7 +32,11 @@ pub enum RemoveError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplaceRangeError {
     /// The range bounds are invalid or out of bounds.
-    OutOfBounds { start: usize, end: usize, len: usize },
+    OutOfBounds {
+        start: usize,
+        end: usize,
+        len: usize,
+    },
     /// The range start or end is not on a UTF-8 character boundary.
     NotCharBoundary { idx: usize },
     /// The result would exceed the fixed capacity.
@@ -76,7 +80,9 @@ impl fmt::Display for InsertError {
             InsertError::OutOfBounds { idx, len } => {
                 write!(f, "index out of bounds: idx={idx}, len={len}")
             }
-            InsertError::NotCharBoundary { idx } => write!(f, "index is not a char boundary: idx={idx}"),
+            InsertError::NotCharBoundary { idx } => {
+                write!(f, "index is not a char boundary: idx={idx}")
+            }
             InsertError::TooLong => f.write_str("string too long"),
         }
     }
@@ -88,7 +94,9 @@ impl fmt::Display for RemoveError {
             RemoveError::OutOfBounds { idx, len } => {
                 write!(f, "index out of bounds: idx={idx}, len={len}")
             }
-            RemoveError::NotCharBoundary { idx } => write!(f, "index is not a char boundary: idx={idx}"),
+            RemoveError::NotCharBoundary { idx } => {
+                write!(f, "index is not a char boundary: idx={idx}")
+            }
         }
     }
 }
@@ -97,7 +105,10 @@ impl fmt::Display for ReplaceRangeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ReplaceRangeError::OutOfBounds { start, end, len } => {
-                write!(f, "range out of bounds: start={start}, end={end}, len={len}")
+                write!(
+                    f,
+                    "range out of bounds: start={start}, end={end}, len={len}"
+                )
             }
             ReplaceRangeError::NotCharBoundary { idx } => {
                 write!(f, "index is not a char boundary: idx={idx}")
@@ -112,6 +123,28 @@ impl fmt::Display for TryFromBytesError {
         match self {
             TryFromBytesError::TooLong => f.write_str("string too long"),
             TryFromBytesError::Utf8Error(e) => e.fmt(f),
+        }
+    }
+}
+
+/// An error returned by `try_split_off`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitOffError {
+    /// The index is outside the string bounds.
+    OutOfBounds { at: usize, len: usize },
+    /// The index is not on a UTF-8 character boundary.
+    NotCharBoundary { at: usize },
+}
+
+impl fmt::Display for SplitOffError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SplitOffError::OutOfBounds { at, len } => {
+                write!(f, "index out of bounds: at={at}, len={len}")
+            }
+            SplitOffError::NotCharBoundary { at } => {
+                write!(f, "index is not a char boundary: at={at}")
+            }
         }
     }
 }

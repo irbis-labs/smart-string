@@ -19,6 +19,12 @@ use crate::PascalString;
 #[cfg(feature = "serde")]
 mod with_serde;
 
+mod error;
+pub use error::Utf16DecodeError;
+
+mod into_chars;
+pub use into_chars::IntoChars;
+
 pub const DEFAULT_CAPACITY: usize = 30;
 
 /// A string that stores short values on the stack and longer values on the heap.
@@ -79,9 +85,7 @@ impl<const N: usize> SmartString<N> {
     /// When MSRV is bumped to a version where `String::try_with_capacity` is available, this should
     /// be revisited for closer upstream parity and to reduce “looks like a copy/paste bug” risk.
     #[inline]
-    pub fn try_with_capacity(
-        capacity: usize,
-    ) -> Result<Self, std::collections::TryReserveError> {
+    pub fn try_with_capacity(capacity: usize) -> Result<Self, std::collections::TryReserveError> {
         if capacity <= N {
             return Ok(Self::new());
         }
@@ -97,25 +101,15 @@ impl<const N: usize> SmartString<N> {
         String::from_utf8(vec).map(Self::Heap)
     }
 
-    // TBD What to do with this?
-    // #[cfg(not(no_global_oom_handling))]
-    // #[inline]
-    // #[must_use]
-    // pub fn from_utf8_lossy(v: &[u8]) -> Cow<'_, str> {
-    //     match String::from_utf8_lossy(v) {
-    //         Cow::Borrowed(s) => Cow::Borrowed(s),
-    //         Cow::Owned(s) => Cow::Owned(Self::Heap(s)),
-    //     }
-    // }
-
     pub fn from_utf16(v: &[u16]) -> Result<Self, FromUtf16Error> {
-        String::from_utf16(v).map(Self::Heap)
+        String::from_utf16(v).map(|s| Self::from(s.as_str()))
     }
 
     #[must_use]
     #[inline]
     pub fn from_utf16_lossy(v: &[u16]) -> Self {
-        Self::Heap(String::from_utf16_lossy(v))
+        let s = String::from_utf16_lossy(v);
+        Self::from(s.as_str())
     }
 
     #[inline]
@@ -328,6 +322,19 @@ impl<const N: usize> SmartString<N> {
 
     // --- String-like APIs that require heap delegation -------------------------------------------
 
+    /// Converts the `SmartString` into an iterator over its `char`s.
+    ///
+    /// The returned [`IntoChars`] iterator consumes `self`.  It supports forward and backward
+    /// traversal, exact remaining-char counting, and fused behaviour.
+    #[inline]
+    #[must_use]
+    pub fn into_chars(self) -> IntoChars<N> {
+        match self {
+            Self::Stack(s) => IntoChars::new_stack(s),
+            Self::Heap(s) => IntoChars::new_heap(s),
+        }
+    }
+
     #[inline]
     #[must_use]
     pub fn into_string(self) -> String {
@@ -385,9 +392,7 @@ impl<const N: usize> SmartString<N> {
             Self::Heap(s) => s.insert(idx, ch),
             Self::Stack(s) => match s.try_insert(idx, ch) {
                 Ok(()) => (),
-                Err(pascal_string::InsertError::TooLong) => {
-                    self.ensure_heap_mut().insert(idx, ch)
-                }
+                Err(pascal_string::InsertError::TooLong) => self.ensure_heap_mut().insert(idx, ch),
                 Err(_) => panic!("invalid index or char boundary"),
             },
         }
@@ -544,6 +549,230 @@ impl<const N: usize> SmartString<N> {
             },
         }
     }
+
+    /// Copies the byte range `src` from `self` and appends it to the end.
+    ///
+    /// Panics if the range is out of bounds or not on UTF-8 char boundaries.
+    pub fn extend_from_within<R: std::ops::RangeBounds<usize>>(&mut self, src: R) {
+        use std::ops::Bound;
+        let len = self.len();
+        let start = match src.start_bound() {
+            Bound::Included(&n) => n,
+            Bound::Excluded(&n) => n.checked_add(1).expect("extend_from_within: start overflow"),
+            Bound::Unbounded => 0,
+        };
+        let end = match src.end_bound() {
+            Bound::Included(&n) => n.checked_add(1).expect("extend_from_within: end overflow"),
+            Bound::Excluded(&n) => n,
+            Bound::Unbounded => len,
+        };
+        assert!(
+            start <= end,
+            "extend_from_within: start ({start}) > end ({end})"
+        );
+        assert!(end <= len, "extend_from_within: end ({end}) > len ({len})");
+        let s = self.as_str();
+        assert!(
+            s.is_char_boundary(start),
+            "extend_from_within: start not on char boundary"
+        );
+        assert!(
+            s.is_char_boundary(end),
+            "extend_from_within: end not on char boundary"
+        );
+        // Extract the slice as an owned string to avoid borrow conflict
+        let to_append = self.as_str()[start..end].to_string();
+        self.push_str(&to_append);
+    }
+
+    /// Removes all non-overlapping occurrences of `pat` from the string in-place.
+    ///
+    /// If `pat` is empty, this is a no-op.
+    pub fn remove_matches(&mut self, pat: &str) {
+        if pat.is_empty() {
+            return;
+        }
+        match self {
+            Self::Stack(s) => s.remove_matches(pat),
+            Self::Heap(s) => {
+                // Manual implementation since String::remove_matches is post-MSRV (1.59).
+                let mut result = String::with_capacity(s.len());
+                let mut src = 0;
+                let pat_len = pat.len();
+                while src < s.len() {
+                    if s[src..].starts_with(pat) {
+                        src += pat_len;
+                    } else {
+                        let ch = s[src..].chars().next().unwrap();
+                        result.push(ch);
+                        src += ch.len_utf8();
+                    }
+                }
+                *s = result;
+            }
+        }
+    }
+
+    /// Removes all occurrences of the character `pat` from the string in-place.
+    ///
+    /// This is a convenience wrapper around `retain`.
+    #[inline]
+    pub fn remove_matches_char(&mut self, pat: char) {
+        self.retain(|c| c != pat);
+    }
+
+    /// Replaces the first occurrence of `pat` with `replacement`.
+    ///
+    /// If `pat` is not found, `self` is unchanged.
+    #[inline]
+    pub fn replace_first(&mut self, pat: &str, replacement: &str) {
+        if let Some(start) = self.as_str().find(pat) {
+            let end = start + pat.len();
+            self.replace_range(start..end, replacement);
+        }
+    }
+
+    /// Replaces the first occurrence of the character `pat` with `replacement`.
+    ///
+    /// If `pat` is not found, `self` is unchanged.
+    #[inline]
+    pub fn replace_first_char(&mut self, pat: char, replacement: &str) {
+        if let Some(start) = self.as_str().find(pat) {
+            let end = start + pat.len_utf8();
+            self.replace_range(start..end, replacement);
+        }
+    }
+
+    /// Replaces the last occurrence of `pat` with `replacement`.
+    ///
+    /// If `pat` is not found, `self` is unchanged.
+    #[inline]
+    pub fn replace_last(&mut self, pat: &str, replacement: &str) {
+        if let Some(start) = self.as_str().rfind(pat) {
+            let end = start + pat.len();
+            self.replace_range(start..end, replacement);
+        }
+    }
+
+    /// Replaces the last occurrence of the character `pat` with `replacement`.
+    ///
+    /// If `pat` is not found, `self` is unchanged.
+    #[inline]
+    pub fn replace_last_char(&mut self, pat: char, replacement: &str) {
+        if let Some(start) = self.as_str().rfind(pat) {
+            let end = start + pat.len_utf8();
+            self.replace_range(start..end, replacement);
+        }
+    }
+
+    /// Decode a UTF-16BE byte slice into a `SmartString`.
+    ///
+    /// Takes `&[u8]` (raw bytes in big-endian order), matching the upstream
+    /// `String::from_utf16be` signature.
+    ///
+    /// Returns [`Utf16DecodeError`] if the input contains an unpaired surrogate or
+    /// an odd number of bytes.
+    pub fn from_utf16be(v: &[u8]) -> Result<Self, Utf16DecodeError> {
+        decode_utf16_bytes(v, u16::from_be_bytes, false)
+    }
+
+    /// Decode a UTF-16BE byte slice into a `SmartString`, replacing invalid data with U+FFFD.
+    ///
+    /// Accepts an odd trailing byte or unpaired surrogates and substitutes U+FFFD in their place.
+    #[must_use]
+    pub fn from_utf16be_lossy(v: &[u8]) -> Self {
+        decode_utf16_bytes(v, u16::from_be_bytes, true).unwrap()
+    }
+
+    /// Decode a UTF-16LE byte slice into a `SmartString`.
+    ///
+    /// Takes `&[u8]` (raw bytes in little-endian order), matching the upstream
+    /// `String::from_utf16le` signature.
+    ///
+    /// Returns [`Utf16DecodeError`] if the input contains an unpaired surrogate or
+    /// an odd number of bytes.
+    pub fn from_utf16le(v: &[u8]) -> Result<Self, Utf16DecodeError> {
+        decode_utf16_bytes(v, u16::from_le_bytes, false)
+    }
+
+    /// Decode a UTF-16LE byte slice into a `SmartString`, replacing invalid data with U+FFFD.
+    ///
+    /// Accepts an odd trailing byte or unpaired surrogates and substitutes U+FFFD in their place.
+    #[must_use]
+    pub fn from_utf16le_lossy(v: &[u8]) -> Self {
+        decode_utf16_bytes(v, u16::from_le_bytes, true).unwrap()
+    }
+}
+
+// -- UTF-16 decode helper -------------------------------------------------------------------------
+
+/// Decode a UTF-16 byte sequence with explicit byte order into a `SmartString`.
+///
+/// `to_u16` converts a pair of bytes into a `u16` value (BE or LE).
+/// If `lossy` is `true`, invalid surrogates and odd trailing bytes are replaced with U+FFFD.
+/// If `lossy` is `false`, returns `Err` on any invalid surrogate sequence or odd byte count.
+fn decode_utf16_bytes<const N: usize>(
+    v: &[u8],
+    to_u16: fn([u8; 2]) -> u16,
+    lossy: bool,
+) -> Result<SmartString<N>, Utf16DecodeError> {
+    let pair_count = v.len() / 2;
+    let mut buf = String::with_capacity(pair_count); // at least one char per code unit
+
+    let mut i = 0;
+    while i < pair_count {
+        let code_unit = to_u16([v[i * 2], v[i * 2 + 1]]);
+
+        if (0xD800..=0xDBFF).contains(&code_unit) {
+            // High surrogate — must be followed by a low surrogate.
+            if i + 1 < pair_count {
+                let low = to_u16([v[(i + 1) * 2], v[(i + 1) * 2 + 1]]);
+                if (0xDC00..=0xDFFF).contains(&low) {
+                    // Valid surrogate pair.
+                    let cp = 0x10000 + ((code_unit as u32 - 0xD800) << 10) + (low as u32 - 0xDC00);
+                    if let Some(ch) = char::from_u32(cp) {
+                        buf.push(ch);
+                    } else if lossy {
+                        buf.push('\u{FFFD}');
+                    } else {
+                        return Err(Utf16DecodeError::new());
+                    }
+                    i += 2;
+                    continue;
+                }
+            }
+            // Unpaired high surrogate.
+            if lossy {
+                buf.push('\u{FFFD}');
+            } else {
+                return Err(Utf16DecodeError::new());
+            }
+        } else if (0xDC00..=0xDFFF).contains(&code_unit) {
+            // Unpaired low surrogate.
+            if lossy {
+                buf.push('\u{FFFD}');
+            } else {
+                return Err(Utf16DecodeError::new());
+            }
+        } else {
+            // BMP character — all values in 0x0000..=0xFFFF excluding surrogates are valid Unicode.
+            // SAFETY: values 0x0000–0xD7FF and 0xE000–0xFFFF are all valid Unicode scalar values.
+            let ch = unsafe { char::from_u32_unchecked(code_unit as u32) };
+            buf.push(ch);
+        }
+        i += 1;
+    }
+
+    // Odd trailing byte — not a complete code unit.
+    if v.len() % 2 != 0 {
+        if lossy {
+            buf.push('\u{FFFD}');
+        } else {
+            return Err(Utf16DecodeError::new());
+        }
+    }
+
+    Ok(SmartString::from(buf.as_str()))
 }
 
 // -- Common traits --------------------------------------------------------------------------------
@@ -1378,5 +1607,417 @@ mod tests {
 
         let arc: Arc<str> = SmartString::<4>::from("ab").into();
         assert_eq!(&*arc, "ab");
+    }
+
+    // -- from_utf16be / from_utf16le tests --------------------------------------------------------
+
+    #[test]
+    fn test_utf16be_ascii_hi_lands_on_stack() {
+        // "Hi" in UTF-16BE: U+0048, U+0069
+        let bytes = [0x00u8, 0x48, 0x00, 0x69];
+        let s = SmartString::<30>::from_utf16be(&bytes).unwrap();
+        assert_eq!(s.as_str(), "Hi");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_utf16be_long_string_lands_on_heap() {
+        // 20 BMP characters encoded as UTF-16BE = 40 bytes; each is 1–3 UTF-8 bytes.
+        // Use ASCII codepoints so the total UTF-8 size equals 20 bytes, which still fits on the
+        // default 30-byte stack.  Instead use non-ASCII multi-byte chars to force heap:
+        // U+4F60 ("你") = 3 UTF-8 bytes.  11 copies → 33 UTF-8 bytes > 30-byte stack.
+        let code_unit: u16 = 0x4F60; // 你
+        let mut bytes = Vec::new();
+        for _ in 0..11 {
+            bytes.extend_from_slice(&code_unit.to_be_bytes());
+        }
+        let s = SmartString::<30>::from_utf16be(&bytes).unwrap();
+        assert_eq!(s.as_str(), "你你你你你你你你你你你");
+        assert!(s.is_heap());
+    }
+
+    #[test]
+    fn test_utf16be_surrogate_pair_musical_symbol() {
+        // U+1D11E MUSICAL SYMBOL G CLEF encoded as UTF-16BE surrogate pair: D834 DD1E
+        let bytes = [0xD8u8, 0x34, 0xDD, 0x1E];
+        let s = SmartString::<30>::from_utf16be(&bytes).unwrap();
+        assert_eq!(s.as_str(), "\u{1D11E}");
+    }
+
+    #[test]
+    fn test_utf16be_unpaired_high_surrogate_is_err() {
+        // High surrogate D800 with no following low surrogate.
+        let bytes = [0xD8u8, 0x00, 0x00, 0x41]; // D800, then 'A'
+        assert!(SmartString::<30>::from_utf16be(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_utf16be_unpaired_low_surrogate_is_err() {
+        // Low surrogate DC00 with no preceding high surrogate.
+        let bytes = [0xDCu8, 0x00, 0x00, 0x41]; // DC00, then 'A'
+        assert!(SmartString::<30>::from_utf16be(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_utf16be_empty_input() {
+        let s = SmartString::<30>::from_utf16be(&[]).unwrap();
+        assert_eq!(s.as_str(), "");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_utf16be_odd_byte_count_is_err() {
+        let bytes = [0x00u8, 0x48, 0x00]; // "H" + one trailing byte
+        assert!(SmartString::<30>::from_utf16be(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_utf16be_bmp_chinese() {
+        // "你好" in UTF-16BE: U+4F60, U+597D
+        let bytes = [0x4Fu8, 0x60, 0x59, 0x7D];
+        let s = SmartString::<30>::from_utf16be(&bytes).unwrap();
+        assert_eq!(s.as_str(), "你好");
+    }
+
+    // -- from_utf16be_lossy -----------------------------------------------------------------------
+
+    #[test]
+    fn test_utf16be_lossy_valid_input_unchanged() {
+        let bytes = [0x00u8, 0x48, 0x00, 0x69]; // "Hi"
+        let s = SmartString::<30>::from_utf16be_lossy(&bytes);
+        assert_eq!(s.as_str(), "Hi");
+    }
+
+    #[test]
+    fn test_utf16be_lossy_unpaired_high_surrogate_replaced() {
+        // High surrogate D800 followed by non-surrogate 'A'.
+        let bytes = [0xD8u8, 0x00, 0x00, 0x41];
+        let s = SmartString::<30>::from_utf16be_lossy(&bytes);
+        assert_eq!(s.as_str(), "\u{FFFD}A");
+    }
+
+    #[test]
+    fn test_utf16be_lossy_unpaired_low_surrogate_replaced() {
+        let bytes = [0xDCu8, 0x00, 0x00, 0x41]; // DC00, 'A'
+        let s = SmartString::<30>::from_utf16be_lossy(&bytes);
+        assert_eq!(s.as_str(), "\u{FFFD}A");
+    }
+
+    #[test]
+    fn test_utf16be_lossy_odd_trailing_byte_replaced() {
+        let bytes = [0x00u8, 0x48, 0xFF]; // 'H' + one orphan byte
+        let s = SmartString::<30>::from_utf16be_lossy(&bytes);
+        assert_eq!(s.as_str(), "H\u{FFFD}");
+    }
+
+    // -- from_utf16le / from_utf16le_lossy -------------------------------------------------------
+
+    #[test]
+    fn test_utf16le_ascii_hi_lands_on_stack() {
+        // "Hi" in UTF-16LE: U+0048, U+0069 → bytes reversed per code unit
+        let bytes = [0x48u8, 0x00, 0x69, 0x00];
+        let s = SmartString::<30>::from_utf16le(&bytes).unwrap();
+        assert_eq!(s.as_str(), "Hi");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_utf16le_long_string_lands_on_heap() {
+        // Same heap test as BE, but with LE byte order.
+        let code_unit: u16 = 0x4F60; // 你
+        let mut bytes = Vec::new();
+        for _ in 0..11 {
+            bytes.extend_from_slice(&code_unit.to_le_bytes());
+        }
+        let s = SmartString::<30>::from_utf16le(&bytes).unwrap();
+        assert_eq!(s.as_str(), "你你你你你你你你你你你");
+        assert!(s.is_heap());
+    }
+
+    #[test]
+    fn test_utf16le_surrogate_pair_musical_symbol() {
+        // U+1D11E in UTF-16LE: 34D8 1EDD
+        let bytes = [0x34u8, 0xD8, 0x1E, 0xDD];
+        let s = SmartString::<30>::from_utf16le(&bytes).unwrap();
+        assert_eq!(s.as_str(), "\u{1D11E}");
+    }
+
+    #[test]
+    fn test_utf16le_unpaired_high_surrogate_is_err() {
+        let bytes = [0x00u8, 0xD8, 0x41, 0x00]; // D800 LE, then 'A' LE
+        assert!(SmartString::<30>::from_utf16le(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_utf16le_unpaired_low_surrogate_is_err() {
+        let bytes = [0x00u8, 0xDC, 0x41, 0x00]; // DC00 LE, then 'A' LE
+        assert!(SmartString::<30>::from_utf16le(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_utf16le_empty_input() {
+        let s = SmartString::<30>::from_utf16le(&[]).unwrap();
+        assert_eq!(s.as_str(), "");
+    }
+
+    #[test]
+    fn test_utf16le_odd_byte_count_is_err() {
+        let bytes = [0x48u8, 0x00, 0x00]; // 'H' LE + one trailing byte
+        assert!(SmartString::<30>::from_utf16le(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_utf16le_bmp_chinese() {
+        // "你好" in UTF-16LE
+        let bytes = [0x60u8, 0x4F, 0x7D, 0x59];
+        let s = SmartString::<30>::from_utf16le(&bytes).unwrap();
+        assert_eq!(s.as_str(), "你好");
+    }
+
+    #[test]
+    fn test_utf16le_lossy_unpaired_surrogate_replaced() {
+        let bytes = [0x00u8, 0xD8, 0x41, 0x00]; // D800 LE + 'A' LE
+        let s = SmartString::<30>::from_utf16le_lossy(&bytes);
+        assert_eq!(s.as_str(), "\u{FFFD}A");
+    }
+
+    #[test]
+    fn test_utf16le_lossy_odd_trailing_byte_replaced() {
+        let bytes = [0x48u8, 0x00, 0xFF]; // 'H' LE + orphan
+        let s = SmartString::<30>::from_utf16le_lossy(&bytes);
+        assert_eq!(s.as_str(), "H\u{FFFD}");
+    }
+
+    #[test]
+    fn test_utf16_decode_error_display() {
+        let err = Utf16DecodeError::new();
+        assert_eq!(err.to_string(), "invalid utf-16: lone surrogate found");
+    }
+
+    #[test]
+    fn test_utf16be_stack_vs_heap_awareness() {
+        // 2 chars × 2 bytes/char = 4 bytes input → 2 UTF-8 bytes → fits on a 4-byte stack.
+        let bytes = [0x00u8, 0x48, 0x00, 0x69]; // "Hi"
+        let stack = SmartString::<4>::from_utf16be(&bytes).unwrap();
+        assert!(stack.is_stack());
+
+        // 3 × U+4F60 = 9 UTF-8 bytes > 4-byte stack → heap.
+        let code_unit: u16 = 0x4F60;
+        let mut long_bytes = Vec::new();
+        for _ in 0..3 {
+            long_bytes.extend_from_slice(&code_unit.to_be_bytes());
+        }
+        let heap = SmartString::<4>::from_utf16be(&long_bytes).unwrap();
+        assert!(heap.is_heap());
+    }
+
+    // -- extend_from_within tests -------------------------------------------------------------------
+
+    #[test]
+    fn test_extend_from_within_stack() {
+        let mut s = SmartString::<10>::from("abc");
+        s.extend_from_within(0..2);
+        assert_eq!(s.as_str(), "abcab");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_extend_from_within_promotes_to_heap() {
+        let mut s = SmartString::<4>::from("abc");
+        s.extend_from_within(..); // "abcabc" = 6 bytes > 4
+        assert_eq!(s.as_str(), "abcabc");
+        assert!(s.is_heap());
+    }
+
+    #[test]
+    fn test_extend_from_within_heap() {
+        let mut s = SmartString::<2>::from("hello");
+        assert!(s.is_heap());
+        s.extend_from_within(1..3);
+        assert_eq!(s.as_str(), "helloel");
+    }
+
+    #[test]
+    fn test_extend_from_within_empty_range() {
+        let mut s = SmartString::<10>::from("abc");
+        s.extend_from_within(1..1);
+        assert_eq!(s.as_str(), "abc");
+    }
+
+    #[test]
+    fn test_extend_from_within_full_range() {
+        let mut s = SmartString::<10>::from("ab");
+        s.extend_from_within(..);
+        assert_eq!(s.as_str(), "abab");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_extend_from_within_non_char_boundary() {
+        let mut s = SmartString::<10>::from("a€b"); // € is 3 bytes
+        s.extend_from_within(1..3); // mid-€ boundaries
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_extend_from_within_out_of_bounds() {
+        let mut s = SmartString::<10>::from("abc");
+        s.extend_from_within(0..10);
+    }
+
+    // -- remove_matches tests -----------------------------------------------------------------------
+
+    #[test]
+    fn test_remove_matches_stack_single() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.remove_matches("b");
+        assert_eq!(s.as_str(), "acac");
+    }
+
+    #[test]
+    fn test_remove_matches_stack_multiple() {
+        let mut s = SmartString::<20>::from("aXbXcX");
+        s.remove_matches("X");
+        assert_eq!(s.as_str(), "abc");
+    }
+
+    #[test]
+    fn test_remove_matches_no_match() {
+        let mut s = SmartString::<10>::from("hello");
+        s.remove_matches("xyz");
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_remove_matches_empty_pattern() {
+        let mut s = SmartString::<10>::from("hello");
+        s.remove_matches("");
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_remove_matches_entire_string() {
+        let mut s = SmartString::<10>::from("aaa");
+        s.remove_matches("aaa");
+        assert_eq!(s.as_str(), "");
+    }
+
+    #[test]
+    fn test_remove_matches_heap() {
+        let mut s = SmartString::<2>::from("hello world");
+        assert!(s.is_heap());
+        s.remove_matches("o");
+        assert_eq!(s.as_str(), "hell wrld");
+    }
+
+    #[test]
+    fn test_remove_matches_multibyte() {
+        let mut s = SmartString::<20>::from("a€b€c");
+        s.remove_matches("€");
+        assert_eq!(s.as_str(), "abc");
+    }
+
+    #[test]
+    fn test_remove_matches_char_variant() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.remove_matches_char('b');
+        assert_eq!(s.as_str(), "acac");
+    }
+
+    // -- replace_first / replace_last tests ---------------------------------------------------------
+
+    #[test]
+    fn test_replace_first_same_length() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.replace_first("b", "X");
+        assert_eq!(s.as_str(), "aXcabc");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_replace_first_shorter() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.replace_first("bc", "Z");
+        assert_eq!(s.as_str(), "aZabc");
+    }
+
+    #[test]
+    fn test_replace_first_longer_fits_stack() {
+        let mut s = SmartString::<20>::from("abcabc");
+        s.replace_first("b", "XYZ");
+        assert_eq!(s.as_str(), "aXYZcabc");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_replace_first_longer_promotes_to_heap() {
+        let mut s = SmartString::<4>::from("abc");
+        s.replace_first("b", "XXXX"); // "aXXXXc" = 6 > 4
+        assert_eq!(s.as_str(), "aXXXXc");
+        assert!(s.is_heap());
+    }
+
+    #[test]
+    fn test_replace_first_no_match() {
+        let mut s = SmartString::<10>::from("hello");
+        s.replace_first("xyz", "!");
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_replace_last_gets_last() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.replace_last("b", "X");
+        assert_eq!(s.as_str(), "abcaXc");
+    }
+
+    #[test]
+    fn test_replace_first_vs_last() {
+        let mut s1 = SmartString::<20>::from("aXbXcXd");
+        let mut s2 = s1.clone();
+        s1.replace_first("X", ".");
+        s2.replace_last("X", ".");
+        assert_eq!(s1.as_str(), "a.bXcXd");
+        assert_eq!(s2.as_str(), "aXbXc.d");
+    }
+
+    #[test]
+    fn test_replace_first_at_boundaries() {
+        let mut s = SmartString::<10>::from("abc");
+        s.replace_first("a", "X");
+        assert_eq!(s.as_str(), "Xbc");
+
+        let mut s = SmartString::<10>::from("abc");
+        s.replace_first("c", "X");
+        assert_eq!(s.as_str(), "abX");
+    }
+
+    #[test]
+    fn test_replace_first_char_variant() {
+        let mut s = SmartString::<10>::from("a€b€c");
+        s.replace_first_char('€', "X");
+        assert_eq!(s.as_str(), "aXb€c");
+    }
+
+    #[test]
+    fn test_replace_last_char_variant() {
+        let mut s = SmartString::<10>::from("a€b€c");
+        s.replace_last_char('€', "X");
+        assert_eq!(s.as_str(), "a€bXc");
+    }
+
+    #[test]
+    fn test_from_utf16_stack_aware() {
+        // "Hi" = 2 bytes UTF-8, should land on stack with capacity 4
+        let s = SmartString::<4>::from_utf16(&[0x48u16, 0x69]).unwrap();
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "Hi");
+    }
+
+    #[test]
+    fn test_from_utf16_lossy_stack_aware() {
+        let s = SmartString::<4>::from_utf16_lossy(&[0x48u16, 0x69]);
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "Hi");
     }
 }

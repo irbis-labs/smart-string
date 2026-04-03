@@ -558,11 +558,11 @@ impl<const N: usize> SmartString<N> {
         let len = self.len();
         let start = match src.start_bound() {
             Bound::Included(&n) => n,
-            Bound::Excluded(&n) => n + 1,
+            Bound::Excluded(&n) => n.checked_add(1).expect("extend_from_within: start overflow"),
             Bound::Unbounded => 0,
         };
         let end = match src.end_bound() {
-            Bound::Included(&n) => n + 1,
+            Bound::Included(&n) => n.checked_add(1).expect("extend_from_within: end overflow"),
             Bound::Excluded(&n) => n,
             Bound::Unbounded => len,
         };

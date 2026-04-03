@@ -19,7 +19,7 @@ Currently, Smart String is in active development, and its API might undergo chan
 tried-and-true patterns from earlier works, the library as a standalone entity is relatively new. Hence, it's advised to
 use it with caution and feel free to provide feedback, report issues, or suggest improvements.
 
-Some core behavior is covered by unit tests, but coverage is incomplete.
+The library has 195 tests covering core behavior, edge cases, and UTF-8/UTF-16 boundary conditions, including property-based tests (`proptest`) for UTF-16 decode and Miri CI for undefined behavior detection.
 
 ## Features
 

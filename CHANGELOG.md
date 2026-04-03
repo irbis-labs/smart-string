@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-04-03
+
+### Added
+
+- 37 new tests closing coverage gaps: `SmartString::drain`, `into_bytes`, `into_string`, `from_utf8`, `shrink_to`, `shrink_to_fit`, `StrStack` mutation sequences (push/remove/push), empty string segments, `DisplayExt::format_with`, `write_to_bytes`.
+- Property-based tests (`proptest`) for UTF-16 decode: round-trip, reference match against `String::from_utf16`, lossy-never-panics, stack-awareness.
+- `proptest` added as dev-dependency.
+
 ## [0.2.2] - 2026-04-03
 
 ### Added

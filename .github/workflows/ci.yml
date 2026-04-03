@@ -44,6 +44,21 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings
 
+  miri:
+    name: miri (UB detection)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - name: cargo miri test
+        run: cargo +nightly miri test
+        env:
+          # strict-provenance: catch pointer provenance issues
+          # ignore-leaks: SmartString::leak() intentionally leaks memory
+          MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-ignore-leaks
+
   msrv:
     name: msrv (rustc 1.59.0)
     runs-on: ubuntu-latest

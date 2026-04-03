@@ -31,6 +31,21 @@ pub struct PascalString<const CAPACITY: usize> {
     data: [u8; CAPACITY],
 }
 
+/// Snapshot `$ps.data[..len]` into a stack buffer and bind `$name: &str` to it.
+///
+/// Used by `retain` and `remove_matches` to iterate over the original content
+/// while mutating `self.data` in place. Centralizes the one `unsafe` call
+/// (`from_utf8_unchecked`) that relies on the PascalString UTF-8 invariant.
+macro_rules! snapshot_as_str {
+    ($ps:expr, $buf:ident, $name:ident) => {
+        let len = $ps.len();
+        let mut $buf = [0_u8; CAPACITY];
+        $buf[..len].copy_from_slice(&$ps.data[..len]);
+        // SAFETY: `$buf[..len]` is a byte-for-byte copy of a PascalString which maintains UTF-8.
+        let $name = unsafe { from_utf8_unchecked(&$buf[..len]) };
+    };
+}
+
 impl<const CAPACITY: usize> PascalString<CAPACITY> {
     #[inline]
     fn validate_range_bounds(&self, start: usize, end: usize) -> Result<(), ReplaceRangeError> {
@@ -533,14 +548,8 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     where
         F: FnMut(char) -> bool,
     {
-        let len = self.len();
-
-        // Copy the current contents so we can iterate without aliasing `self.data`.
-        let mut src = [0_u8; CAPACITY];
-        src[..len].copy_from_slice(&self.data[..len]);
-
-        // SAFETY: `src[..len]` was copied from a `PascalString` which maintains UTF-8 invariants.
-        let s = unsafe { from_utf8_unchecked(&src[..len]) };
+        snapshot_as_str!(self, src, s);
+        let len = s.len();
 
         let mut write = 0_usize;
         let mut buf = [0_u8; 4];
@@ -613,20 +622,12 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     /// original.
     #[inline]
     pub fn remove_matches(&mut self, pat: &str) {
-        if pat.is_empty() {
-            return;
-        }
-        let len = self.len();
-        if len == 0 {
+        if pat.is_empty() || self.is_empty() {
             return;
         }
 
-        // Copy the current contents so we can iterate without aliasing `self.data`.
-        let mut src = [0_u8; CAPACITY];
-        src[..len].copy_from_slice(&self.data[..len]);
-
-        // SAFETY: `src[..len]` was copied from a valid PascalString which maintains UTF-8.
-        let s = unsafe { std::str::from_utf8_unchecked(&src[..len]) };
+        snapshot_as_str!(self, src, s);
+        let len = s.len();
 
         let mut read = 0_usize;
         let mut write = 0_usize;
@@ -641,8 +642,6 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
                     .next()
                     .expect("read < len implies at least one char")
                     .len_utf8();
-                // `write <= read`, so we can copy within the same buffer if we copy byte-by-byte
-                // through our snapshot `src`.
                 self.data[write..write + ch_len].copy_from_slice(&src[read..read + ch_len]);
                 write += ch_len;
                 read += ch_len;

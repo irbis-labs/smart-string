@@ -763,7 +763,13 @@ fn decode_utf16_bytes<const N: usize>(
             }
         } else {
             // BMP character — all values in 0x0000..=0xFFFF excluding surrogates are valid Unicode.
+            debug_assert!(
+                code_unit <= 0xD7FF || code_unit >= 0xE000,
+                "surrogate {:#06X} reached BMP branch",
+                code_unit,
+            );
             // SAFETY: values 0x0000–0xD7FF and 0xE000–0xFFFF are all valid Unicode scalar values.
+            // The if/else chain above handles surrogates (0xD800–0xDFFF) in separate branches.
             let ch = unsafe { char::from_u32_unchecked(code_unit as u32) };
             buf.push(ch);
         }

@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 //! `smart-string` is a collection of small string primitives:
 //!
 //! - [`PascalString`]: fixed-capacity UTF-8 string stored inline (stack / in-place).

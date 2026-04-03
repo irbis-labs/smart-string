@@ -40,7 +40,7 @@ impl StrStack {
         let (begin, end) = self.get_bounds(index)?;
         // SAFETY: `get_bounds` ensures `begin <= end <= self.data.len()`, and the stack stores only UTF-8 segments
         // pushed via `push(&str)`.
-        Some(unsafe { self.get_unchecked(begin, end) })
+        Some(unsafe { self.get_unchecked_internal(begin, end) })
     }
 
     #[inline]
@@ -51,11 +51,24 @@ impl StrStack {
     /// - `begin <= end`
     /// - `end <= self.data.len()`
     /// - `self.data[begin..end]` must be valid UTF-8
+    #[deprecated(note = "Use `get()` instead. This will be removed in a future version.")]
     pub unsafe fn get_unchecked(&self, begin: usize, end: usize) -> &str {
         // SAFETY: caller upholds bounds + UTF-8 preconditions (see doc comment).
-        let slice = self.data.get_unchecked(begin..end);
-        // SAFETY: caller upholds UTF-8 preconditions (see doc comment).
-        from_utf8_unchecked(slice)
+        unsafe {
+            let slice = self.data.get_unchecked(begin..end);
+            from_utf8_unchecked(slice)
+        }
+    }
+
+    /// Internal unchecked slice access. Not public — callers within the crate
+    /// must uphold bounds + UTF-8 preconditions.
+    #[inline]
+    pub(crate) unsafe fn get_unchecked_internal(&self, begin: usize, end: usize) -> &str {
+        // SAFETY: caller upholds bounds + UTF-8 preconditions.
+        unsafe {
+            let slice = self.data.get_unchecked(begin..end);
+            from_utf8_unchecked(slice)
+        }
     }
 
     #[inline]

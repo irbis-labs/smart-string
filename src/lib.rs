@@ -39,3 +39,4 @@ pub use crate::smart_string::SmartString;
 pub use crate::smart_string::Utf16DecodeError;
 pub use crate::str_stack::StrStack;
 pub use crate::str_stack::StrStackIter;
+pub use crate::str_stack::StrStackOverflow;

@@ -1,3 +1,4 @@
+use std::fmt;
 use std::str::from_utf8_unchecked;
 
 mod iter;
@@ -5,6 +6,22 @@ mod iter;
 mod with_serde;
 
 pub use iter::StrStackIter;
+
+/// Error returned by [`StrStack::try_push`] when the total byte length would exceed `u32::MAX`.
+#[derive(Debug, Clone)]
+pub struct StrStackOverflow {
+    attempted: usize,
+}
+
+impl fmt::Display for StrStackOverflow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "StrStack overflow: attempted total byte length {} exceeds u32::MAX",
+            self.attempted
+        )
+    }
+}
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct StrStack {
@@ -18,6 +35,16 @@ impl StrStack {
         Self::default()
     }
 
+    /// Creates a new `StrStack` with pre-allocated capacity for `items` string segments
+    /// and `bytes` total bytes of string data.
+    #[inline]
+    pub fn with_capacity(items: usize, bytes: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(bytes),
+            ends: Vec::with_capacity(items),
+        }
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.ends.len()
@@ -26,6 +53,28 @@ impl StrStack {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.ends.is_empty()
+    }
+
+    /// Returns the total byte length of the data buffer.
+    ///
+    /// Returns `u32` to match the internal boundary representation,
+    /// making the 4 GB limit explicit at the call site.
+    #[inline]
+    pub fn bytes_len(&self) -> u32 {
+        // `push` guarantees `self.data.len() <= u32::MAX`, so this cast is safe.
+        self.data.len() as u32
+    }
+
+    /// Reserves capacity for at least `additional` more string segments.
+    #[inline]
+    pub fn reserve_items(&mut self, additional: usize) {
+        self.ends.reserve(additional);
+    }
+
+    /// Reserves capacity for at least `additional` more bytes of string data.
+    #[inline]
+    pub fn reserve_bytes(&mut self, additional: usize) {
+        self.data.reserve(additional);
     }
 
     #[inline]
@@ -94,6 +143,14 @@ impl StrStack {
         }
     }
 
+    /// Returns the last (topmost) string segment, or `None` if empty.
+    ///
+    /// Alias for [`get_top`](Self::get_top).
+    #[inline]
+    pub fn last(&self) -> Option<&str> {
+        self.get_top()
+    }
+
     #[inline]
     pub fn remove_top(&mut self) -> Option<()> {
         self.ends.pop()?;
@@ -123,10 +180,40 @@ impl StrStack {
         self.ends.push(new_end);
     }
 
+    /// Fallible push: appends a string segment, returning `Err` if the total byte
+    /// length would exceed `u32::MAX`.
     #[inline]
-    fn clear(&mut self) {
+    pub fn try_push(&mut self, s: &str) -> Result<(), StrStackOverflow> {
+        let new_len = self.data.len() + s.len();
+        let new_end: u32 = new_len
+            .try_into()
+            .map_err(|_| StrStackOverflow { attempted: new_len })?;
+        self.data.extend_from_slice(s.as_bytes());
+        self.ends.push(new_end);
+        Ok(())
+    }
+
+    /// Removes all string segments, resetting the stack to empty.
+    ///
+    /// Does not release allocated memory (use `shrink_to_fit` on the underlying
+    /// vecs if needed — not yet exposed).
+    #[inline]
+    pub fn clear(&mut self) {
         self.data.clear();
         self.ends.clear();
+    }
+
+    /// Keeps the first `len` string segments and removes the rest.
+    ///
+    /// If `len >= self.len()`, this is a no-op (matches [`Vec::truncate`] semantics).
+    #[inline]
+    pub fn truncate(&mut self, len: usize) {
+        if len >= self.ends.len() {
+            return;
+        }
+        self.ends.truncate(len);
+        let byte_end = self.ends.last().copied().unwrap_or(0) as usize;
+        self.data.truncate(byte_end);
     }
 
     #[inline]
@@ -424,5 +511,136 @@ mod tests {
 
         let collected: Vec<&str> = stack.iter().collect();
         assert_eq!(collected, vec!["", "abc", ""]);
+    }
+
+    // -- ergonomics APIs (v0.3) -----------------------------------------------------------------------
+
+    #[test]
+    fn test_with_capacity() {
+        let stack = StrStack::with_capacity(10, 100);
+        assert_eq!(stack.len(), 0);
+        assert!(stack.is_empty());
+    }
+
+    #[test]
+    fn test_bytes_len() {
+        let mut stack = StrStack::new();
+        assert_eq!(stack.bytes_len(), 0);
+        stack.push("abc"); // 3 bytes
+        assert_eq!(stack.bytes_len(), 3);
+        stack.push("€"); // 3 bytes
+        assert_eq!(stack.bytes_len(), 6);
+        stack.push("😊"); // 4 bytes
+        assert_eq!(stack.bytes_len(), 10);
+    }
+
+    #[test]
+    fn test_last() {
+        let mut stack = StrStack::new();
+        assert_eq!(stack.last(), None);
+        stack.push("first");
+        assert_eq!(stack.last(), Some("first"));
+        stack.push("second");
+        assert_eq!(stack.last(), Some("second"));
+        // last() and get_top() return the same value
+        assert_eq!(stack.last(), stack.get_top());
+    }
+
+    #[test]
+    fn test_clear_public() {
+        let mut stack = StrStack::new();
+        stack.push("hello");
+        stack.push("world");
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.bytes_len(), 10);
+
+        stack.clear();
+        assert!(stack.is_empty());
+        assert_eq!(stack.len(), 0);
+        assert_eq!(stack.bytes_len(), 0);
+        assert_eq!(stack.as_str(), "");
+
+        // Can push again after clear
+        stack.push("new");
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("new"));
+    }
+
+    #[test]
+    fn test_truncate() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+        stack.push("ccc");
+        stack.push("ddd");
+        assert_eq!(stack.len(), 4);
+
+        // Truncate to 2 items
+        stack.truncate(2);
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get(0), Some("aaa"));
+        assert_eq!(stack.get(1), Some("bbb"));
+        assert_eq!(stack.get(2), None);
+        assert_eq!(stack.as_str(), "aaabbb");
+    }
+
+    #[test]
+    fn test_truncate_noop() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+
+        // Truncate to >= len is a no-op
+        stack.truncate(5);
+        assert_eq!(stack.len(), 2);
+        stack.truncate(2);
+        assert_eq!(stack.len(), 2);
+    }
+
+    #[test]
+    fn test_truncate_to_zero() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+
+        stack.truncate(0);
+        assert!(stack.is_empty());
+        assert_eq!(stack.as_str(), "");
+    }
+
+    #[test]
+    fn test_truncate_unicode() {
+        let mut stack = StrStack::new();
+        stack.push("你好"); // 6 bytes
+        stack.push("世界"); // 6 bytes
+        stack.push("🦀"); // 4 bytes
+
+        stack.truncate(1);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("你好"));
+        assert_eq!(stack.bytes_len(), 6);
+    }
+
+    #[test]
+    fn test_try_push_success() {
+        let mut stack = StrStack::new();
+        assert!(stack.try_push("hello").is_ok());
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("hello"));
+    }
+
+    #[test]
+    fn test_reserve() {
+        let mut stack = StrStack::new();
+        stack.reserve_items(10);
+        stack.reserve_bytes(100);
+        // Reserving doesn't change length
+        assert_eq!(stack.len(), 0);
+        assert!(stack.is_empty());
+        // But we can push without reallocation
+        for i in 0..10 {
+            stack.push(&format!("{}", i));
+        }
+        assert_eq!(stack.len(), 10);
     }
 }

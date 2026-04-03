@@ -95,8 +95,12 @@ The key invariants are:
 - **`PascalString`**: `len <= CAPACITY` and `data[..len]` is always valid UTF‑8.
 - **`StrStack`**: `data` is always valid UTF‑8 and `ends` entries are valid segment boundaries within `data`.
 
-Policy: every `unsafe { ... }` block must have a local `// SAFETY:` comment explaining what invariant makes it sound, and
-tests must cover UTF‑8 boundary and capacity edge cases.
+Policy:
+
+- `#![deny(unsafe_op_in_unsafe_fn)]` enforced at the crate root.
+- Every `unsafe { ... }` block must have a local `// SAFETY:` comment explaining what invariant makes it sound.
+- Tests must cover UTF‑8 boundary and capacity edge cases.
+- CI runs [Miri](https://github.com/rust-lang/miri) on every push to detect undefined behavior.
 
 ## Compatibility with `std::String`
 

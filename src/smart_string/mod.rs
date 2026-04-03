@@ -19,6 +19,9 @@ use crate::PascalString;
 #[cfg(feature = "serde")]
 mod with_serde;
 
+mod into_chars;
+pub use into_chars::IntoChars;
+
 pub const DEFAULT_CAPACITY: usize = 30;
 
 /// A string that stores short values on the stack and longer values on the heap.
@@ -317,6 +320,19 @@ impl<const N: usize> SmartString<N> {
     }
 
     // --- String-like APIs that require heap delegation -------------------------------------------
+
+    /// Converts the `SmartString` into an iterator over its `char`s.
+    ///
+    /// The returned [`IntoChars`] iterator consumes `self`.  It supports forward and backward
+    /// traversal, exact remaining-char counting, and fused behaviour.
+    #[inline]
+    #[must_use]
+    pub fn into_chars(self) -> IntoChars<N> {
+        match self {
+            Self::Stack(s) => IntoChars::new_stack(s),
+            Self::Heap(s) => IntoChars::new_heap(s),
+        }
+    }
 
     #[inline]
     #[must_use]

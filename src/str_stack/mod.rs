@@ -7,6 +7,17 @@ mod with_serde;
 
 pub use iter::StrStackIter;
 
+/// A lightweight snapshot of `StrStack` state for checkpoint/rollback.
+///
+/// Created by [`StrStack::checkpoint`], consumed by [`StrStack::reset`].
+/// Fields are private to preserve the invariant that `bytes` always points
+/// to a valid UTF-8 boundary within `data`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Checkpoint {
+    items: u32,
+    bytes: u32,
+}
+
 /// Error returned by [`StrStack::try_push`] when the total byte length would exceed `u32::MAX`.
 #[derive(Debug, Clone)]
 pub struct StrStackOverflow {
@@ -214,6 +225,41 @@ impl StrStack {
         self.ends.truncate(len);
         let byte_end = self.ends.last().copied().unwrap_or(0) as usize;
         self.data.truncate(byte_end);
+    }
+
+    /// Captures a lightweight checkpoint of the current stack state.
+    ///
+    /// The checkpoint can later be passed to [`reset`](Self::reset) to roll back
+    /// any segments pushed after this point. Useful for speculative parsing:
+    /// push tokens tentatively, then either commit (by discarding the checkpoint)
+    /// or roll back (by calling `reset`).
+    #[inline]
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            items: self.ends.len() as u32,
+            bytes: self.data.len() as u32,
+        }
+    }
+
+    /// Rolls the stack back to a previously captured [`Checkpoint`].
+    ///
+    /// Removes all segments pushed after the checkpoint was taken.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the checkpoint is invalid (its item count or byte count exceeds
+    /// the current stack state). This can happen if the checkpoint was created from
+    /// a different `StrStack`, or if the stack was reset to an earlier checkpoint
+    /// after this one was taken.
+    #[inline]
+    pub fn reset(&mut self, cp: Checkpoint) {
+        assert!(
+            cp.items as usize <= self.ends.len() && cp.bytes as usize <= self.data.len(),
+            "StrStack::reset: invalid checkpoint (items: {}, bytes: {}) for stack (items: {}, bytes: {})",
+            cp.items, cp.bytes, self.ends.len(), self.data.len()
+        );
+        self.ends.truncate(cp.items as usize);
+        self.data.truncate(cp.bytes as usize);
     }
 
     #[inline]
@@ -642,5 +688,147 @@ mod tests {
             stack.push(&format!("{}", i));
         }
         assert_eq!(stack.len(), 10);
+    }
+
+    // -- checkpoint/rollback (v0.3) -------------------------------------------------------------------
+
+    #[test]
+    fn test_checkpoint_basic() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+        let cp = stack.checkpoint();
+
+        stack.push("ccc");
+        stack.push("ddd");
+        assert_eq!(stack.len(), 4);
+
+        stack.reset(cp);
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get(0), Some("aaa"));
+        assert_eq!(stack.get(1), Some("bbb"));
+        assert_eq!(stack.get(2), None);
+        assert_eq!(stack.as_str(), "aaabbb");
+    }
+
+    #[test]
+    fn test_checkpoint_empty_stack() {
+        let mut stack = StrStack::new();
+        let cp = stack.checkpoint();
+
+        stack.push("aaa");
+        stack.push("bbb");
+        assert_eq!(stack.len(), 2);
+
+        stack.reset(cp);
+        assert!(stack.is_empty());
+        assert_eq!(stack.as_str(), "");
+    }
+
+    #[test]
+    fn test_checkpoint_at_end_is_noop() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+        let cp = stack.checkpoint();
+
+        // Reset immediately without pushing anything
+        stack.reset(cp);
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get(0), Some("aaa"));
+        assert_eq!(stack.get(1), Some("bbb"));
+    }
+
+    #[test]
+    fn test_checkpoint_nested() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        let cp1 = stack.checkpoint();
+
+        stack.push("bbb");
+        let cp2 = stack.checkpoint();
+
+        stack.push("ccc");
+        assert_eq!(stack.len(), 3);
+
+        // Roll back to cp2 (keeps aaa, bbb)
+        stack.reset(cp2);
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.last(), Some("bbb"));
+
+        // Roll back to cp1 (keeps only aaa)
+        stack.reset(cp1);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.last(), Some("aaa"));
+    }
+
+    #[test]
+    fn test_checkpoint_unicode() {
+        let mut stack = StrStack::new();
+        stack.push("你好"); // 6 bytes
+        let cp = stack.checkpoint();
+
+        stack.push("😊"); // 4 bytes
+        stack.push("🦀"); // 4 bytes
+        assert_eq!(stack.bytes_len(), 14);
+
+        stack.reset(cp);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("你好"));
+        assert_eq!(stack.bytes_len(), 6);
+    }
+
+    #[test]
+    fn test_checkpoint_then_push_after_reset() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        let cp = stack.checkpoint();
+
+        stack.push("bbb");
+        stack.reset(cp);
+
+        // Push new data after rollback
+        stack.push("ccc");
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get(0), Some("aaa"));
+        assert_eq!(stack.get(1), Some("ccc"));
+        assert_eq!(stack.as_str(), "aaaccc");
+    }
+
+    #[test]
+    fn test_truncate_preserves_earlier_checkpoint() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        let cp = stack.checkpoint();
+
+        stack.push("bbb");
+        stack.push("ccc");
+        stack.push("ddd");
+
+        // Truncate to 3 items (removes ddd)
+        stack.truncate(3);
+        assert_eq!(stack.len(), 3);
+
+        // cp was taken at 1 item, still valid
+        stack.reset(cp);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("aaa"));
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid checkpoint")]
+    fn test_reset_stale_checkpoint_panics() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+        stack.push("ccc");
+        let cp_late = stack.checkpoint(); // at 3 items, 9 bytes
+
+        // Truncate to 0 — now cp_late is stale
+        stack.truncate(0);
+        assert!(stack.is_empty());
+
+        // cp_late says 3 items / 9 bytes, stack has 0 / 0 — should panic
+        stack.reset(cp_late);
     }
 }

@@ -53,7 +53,9 @@ jobs:
       # Use cargo from the 1.59.0 toolchain directly to avoid
       # "unknown print request split-debuginfo" errors that occur when
       # a newer stable cargo queries an older MSRV rustc.
+      # --lib only: dev-dependencies (serde_json → ryu) may have higher
+      # MSRV than the crate itself; we guarantee our lib compiles, not theirs.
       - name: cargo check (MSRV)
-        run: cargo +1.59.0 check --all-targets
+        run: cargo +1.59.0 check --lib
 
 

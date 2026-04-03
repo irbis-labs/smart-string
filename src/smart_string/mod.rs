@@ -2034,4 +2034,137 @@ mod tests {
         assert!(s.is_stack());
         assert_eq!(s.as_str(), "Hi");
     }
+
+    // -- drain tests ---------------------------------------------------------------------------------
+
+    #[test]
+    fn test_drain_full_range() {
+        let mut s = SmartString::<10>::from("hello");
+        let drained: String = s.drain(..).collect();
+        assert_eq!(drained, "hello");
+        assert_eq!(s.as_str(), "");
+    }
+
+    #[test]
+    fn test_drain_partial_range() {
+        let mut s = SmartString::<10>::from("abcdef");
+        let drained: String = s.drain(1..4).collect();
+        assert_eq!(drained, "bcd");
+        assert_eq!(s.as_str(), "aef");
+    }
+
+    #[test]
+    fn test_drain_promotes_stack_to_heap() {
+        let mut s = SmartString::<10>::from("abc");
+        assert!(s.is_stack());
+        // drain forces heap promotion
+        let drained: String = s.drain(1..2).collect();
+        assert_eq!(drained, "b");
+        assert_eq!(s.as_str(), "ac");
+        assert!(s.is_heap()); // promoted by ensure_heap_mut
+    }
+
+    #[test]
+    fn test_drain_empty_range() {
+        let mut s = SmartString::<10>::from("hello");
+        let drained: String = s.drain(2..2).collect();
+        assert_eq!(drained, "");
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_drain_multibyte() {
+        let mut s = SmartString::<20>::from("a€b");
+        let drained: String = s.drain(1..4).collect(); // drain the 3-byte '€'
+        assert_eq!(drained, "€");
+        assert_eq!(s.as_str(), "ab");
+    }
+
+    // -- into_bytes / into_string / from_utf8 tests --------------------------------------------------
+
+    #[test]
+    fn test_into_bytes_stack() {
+        let s = SmartString::<10>::from("abc");
+        assert!(s.is_stack());
+        assert_eq!(s.into_bytes(), b"abc".to_vec());
+    }
+
+    #[test]
+    fn test_into_bytes_heap() {
+        let s = SmartString::<2>::from("hello");
+        assert!(s.is_heap());
+        assert_eq!(s.into_bytes(), b"hello".to_vec());
+    }
+
+    #[test]
+    fn test_into_string_stack() {
+        let s = SmartString::<10>::from("abc");
+        assert_eq!(s.into_string(), "abc");
+    }
+
+    #[test]
+    fn test_into_string_heap() {
+        let s = SmartString::<2>::from("hello");
+        assert_eq!(s.into_string(), "hello");
+    }
+
+    #[test]
+    fn test_from_utf8_valid() {
+        let s = SmartString::<10>::from_utf8(b"hello".to_vec()).unwrap();
+        assert_eq!(s.as_str(), "hello");
+        assert!(s.is_heap()); // from_utf8 takes Vec, always heap
+    }
+
+    #[test]
+    fn test_from_utf8_invalid() {
+        let result = SmartString::<10>::from_utf8(vec![0xff, 0xfe]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_utf8_empty() {
+        let s = SmartString::<10>::from_utf8(Vec::new()).unwrap();
+        assert_eq!(s.as_str(), "");
+    }
+
+    // -- shrink_to / shrink_to_fit tests -------------------------------------------------------------
+
+    #[test]
+    fn test_shrink_to_fit_heap() {
+        let mut s = SmartString::<4>::from("hello world, this is a long string");
+        assert!(s.is_heap());
+        let cap_before = s.capacity();
+        s.shrink_to_fit();
+        assert!(s.capacity() <= cap_before);
+        assert_eq!(s.as_str(), "hello world, this is a long string");
+    }
+
+    #[test]
+    fn test_shrink_to_fit_stack_noop() {
+        let mut s = SmartString::<10>::from("ab");
+        assert!(s.is_stack());
+        s.shrink_to_fit(); // should not panic or change anything
+        assert_eq!(s.as_str(), "ab");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_shrink_to_heap() {
+        let mut s = SmartString::<4>::with_capacity(100);
+        s.push_str("hello");
+        assert!(s.is_heap());
+        let cap_before = s.capacity();
+        s.shrink_to(10);
+        assert!(s.capacity() <= cap_before);
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_shrink_to_stack_noop() {
+        let mut s = SmartString::<10>::from("ab");
+        assert!(s.is_stack());
+        s.shrink_to(0);
+        assert_eq!(s.as_str(), "ab");
+        assert!(s.is_stack());
+    }
 }

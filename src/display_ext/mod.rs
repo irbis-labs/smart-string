@@ -136,4 +136,75 @@ mod tests {
     fn test_to_fmt_panic() {
         "Hello".to_fmt::<PascalString<4>>();
     }
+
+    #[test]
+    fn test_write_to_bytes() {
+        let mut buf = Vec::new();
+        "Hello".write_to_bytes(&mut buf).unwrap();
+        assert_eq!(buf, b"Hello");
+    }
+
+    #[test]
+    fn test_write_to_bytes_empty() {
+        let mut buf = Vec::new();
+        "".write_to_bytes(&mut buf).unwrap();
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_try_to_bytes() {
+        let result: Result<Vec<u8>, Vec<u8>> = "Hello".try_to_bytes();
+        assert_eq!(result.unwrap(), b"Hello");
+    }
+
+    #[test]
+    fn test_to_bytes() {
+        let result: Vec<u8> = "Hello".to_bytes();
+        assert_eq!(result, b"Hello");
+    }
+
+    #[test]
+    fn test_format_with_collects_chunks() {
+        let mut chunks = Vec::new();
+        "Hello"
+            .format_with(|chunk| {
+                chunks.push(chunk.map(String::from));
+                Ok(())
+            })
+            .unwrap();
+        // Last call is None (terminator)
+        assert_eq!(chunks.last().unwrap(), &None);
+        // At least one Some chunk with the content
+        let content: String = chunks
+            .iter()
+            .filter_map(|c| c.as_ref().map(|s| s.as_str()))
+            .collect();
+        assert_eq!(content, "Hello");
+    }
+
+    #[test]
+    fn test_format_with_empty() {
+        let mut chunks = Vec::new();
+        "".format_with(|chunk| {
+            chunks.push(chunk.map(String::from));
+            Ok(())
+        })
+        .unwrap();
+        // Should get at least the None terminator
+        assert_eq!(chunks.last().unwrap(), &None);
+    }
+
+    #[test]
+    fn test_format_with_number() {
+        let mut content = String::new();
+        42u32
+            .format_with(|chunk| {
+                if let Some(s) = chunk {
+                    content.push_str(s);
+                }
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(content, "42");
+    }
 }

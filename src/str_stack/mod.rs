@@ -295,4 +295,129 @@ mod tests {
         assert_eq!(stack.len(), 1);
         assert_eq!(stack.get_top(), Some("€"));
     }
+
+    // -- push/remove/push mutation sequences ---------------------------------------------------------
+
+    #[test]
+    fn test_push_remove_push_sequence() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+        stack.push("ccc");
+        assert_eq!(stack.len(), 3);
+
+        // Remove top two
+        stack.remove_top();
+        stack.remove_top();
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.as_str(), "aaa");
+        assert_eq!(stack.get(0), Some("aaa"));
+
+        // Push again after removal
+        stack.push("ddd");
+        stack.push("eee");
+        assert_eq!(stack.len(), 3);
+        assert_eq!(stack.as_str(), "aaadddeee");
+        assert_eq!(stack.get(0), Some("aaa"));
+        assert_eq!(stack.get(1), Some("ddd"));
+        assert_eq!(stack.get(2), Some("eee"));
+
+        // Iterator should yield the correct segments
+        let collected: Vec<&str> = stack.iter().collect();
+        assert_eq!(collected, vec!["aaa", "ddd", "eee"]);
+    }
+
+    #[test]
+    fn test_push_remove_all_push_again() {
+        let mut stack = StrStack::new();
+        stack.push("first");
+        stack.push("second");
+
+        stack.remove_top();
+        stack.remove_top();
+        assert!(stack.is_empty());
+        assert_eq!(stack.as_str(), "");
+
+        stack.push("third");
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("third"));
+        assert_eq!(stack.as_str(), "third");
+    }
+
+    #[test]
+    fn test_push_remove_push_unicode() {
+        let mut stack = StrStack::new();
+        stack.push("你好"); // 6 bytes
+        stack.push("世界"); // 6 bytes
+        assert_eq!(stack.as_str(), "你好世界");
+
+        stack.remove_top();
+        assert_eq!(stack.as_str(), "你好");
+
+        stack.push("🦀"); // 4 bytes
+        assert_eq!(stack.as_str(), "你好🦀");
+        assert_eq!(stack.get(0), Some("你好"));
+        assert_eq!(stack.get(1), Some("🦀"));
+
+        let collected: Vec<&str> = stack.iter().collect();
+        assert_eq!(collected, vec!["你好", "🦀"]);
+    }
+
+    #[test]
+    fn test_as_str_equals_iter_concatenation() {
+        let mut stack = StrStack::new();
+        stack.push("abc");
+        stack.push("€");
+        stack.push("def");
+        stack.remove_top();
+        stack.push("ghi");
+        stack.push("😊");
+
+        let concatenated: String = stack.iter().collect();
+        assert_eq!(stack.as_str(), concatenated.as_str());
+    }
+
+    // -- clear ---------------------------------------------------------------------------------------
+
+    #[test]
+    fn test_clear() {
+        let mut stack = StrStack::new();
+        stack.push("hello");
+        stack.push("world");
+        assert_eq!(stack.len(), 2);
+
+        // clear is private, but we can test it via the serde roundtrip
+        // or through repeated remove_top. Let's test the invariant:
+        // after removing all items, the stack is fully clean.
+        stack.remove_top();
+        stack.remove_top();
+        assert!(stack.is_empty());
+        assert_eq!(stack.len(), 0);
+        assert_eq!(stack.as_str(), "");
+        assert!(stack.iter().next().is_none());
+
+        // Can push again
+        stack.push("new");
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("new"));
+    }
+
+    // -- empty string segments -----------------------------------------------------------------------
+
+    #[test]
+    fn test_push_empty_strings() {
+        let mut stack = StrStack::new();
+        stack.push("");
+        stack.push("abc");
+        stack.push("");
+
+        assert_eq!(stack.len(), 3);
+        assert_eq!(stack.get(0), Some(""));
+        assert_eq!(stack.get(1), Some("abc"));
+        assert_eq!(stack.get(2), Some(""));
+        assert_eq!(stack.as_str(), "abc");
+
+        let collected: Vec<&str> = stack.iter().collect();
+        assert_eq!(collected, vec!["", "abc", ""]);
+    }
 }

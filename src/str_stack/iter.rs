@@ -26,7 +26,7 @@ impl<'a> StrStackIter<'a> {
             .ends
             .first()
             .copied()
-            .map(|end| Cursor::new(0, 0, end));
+            .map(|end| Cursor::new(0, 0, end as usize));
         Self { stack, next }
     }
 }
@@ -43,7 +43,7 @@ impl<'a> Iterator for StrStackIter<'a> {
             .ends
             .get(next_index)
             .copied()
-            .map(|next_end| Cursor::new(next_index, end, next_end));
+            .map(|next_end| Cursor::new(next_index, end, next_end as usize));
         // SAFETY: `StrStackIter` is constructed from a valid `StrStack` and advances using `ends` boundaries.
         // `StrStack` only stores UTF-8 segments pushed via `push(&str)`, so `[begin..end]` is in-bounds and valid UTF-8.
         Some(unsafe { self.stack.get_unchecked_internal(begin, end) })

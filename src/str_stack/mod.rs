@@ -9,7 +9,7 @@ pub use iter::StrStackIter;
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct StrStack {
     data: Vec<u8>,
-    ends: Vec<usize>,
+    ends: Vec<u32>,
 }
 
 impl StrStack {
@@ -40,7 +40,7 @@ impl StrStack {
         let (begin, end) = self.get_bounds(index)?;
         // SAFETY: `get_bounds` ensures `begin <= end <= self.data.len()`, and the stack stores only UTF-8 segments
         // pushed via `push(&str)`.
-        Some(unsafe { self.get_unchecked_internal(begin, end) })
+        Some(unsafe { self.get_unchecked_internal(begin as usize, end as usize) })
     }
 
     #[inline]
@@ -72,7 +72,7 @@ impl StrStack {
     }
 
     #[inline]
-    pub fn get_bounds(&self, index: usize) -> Option<(usize, usize)> {
+    pub fn get_bounds(&self, index: usize) -> Option<(u32, u32)> {
         if index + 1 > self.ends.len() {
             return None;
         }
@@ -82,7 +82,7 @@ impl StrStack {
             (0, self.ends[0])
         };
         debug_assert!(start <= end);
-        debug_assert!(end <= self.data.len());
+        debug_assert!((end as usize) <= self.data.len());
         Some((start, end))
     }
 
@@ -97,7 +97,7 @@ impl StrStack {
     #[inline]
     pub fn remove_top(&mut self) -> Option<()> {
         self.ends.pop()?;
-        let end = self.ends.last().copied().unwrap_or(0);
+        let end = self.ends.last().copied().unwrap_or(0) as usize;
         self.data.truncate(end);
         Some(())
     }
@@ -115,7 +115,12 @@ impl StrStack {
     #[inline]
     pub fn push(&mut self, s: &str) {
         self.data.extend_from_slice(s.as_bytes());
-        self.ends.push(self.data.len());
+        let new_end: u32 = self
+            .data
+            .len()
+            .try_into()
+            .expect("StrStack: total byte length exceeds u32::MAX");
+        self.ends.push(new_end);
     }
 
     #[inline]
@@ -156,7 +161,7 @@ mod tests {
         assert!(!stack.is_empty());
         assert_eq!(stack.get_top(), Some("123"));
         assert_eq!(stack.get(0), Some("123"));
-        assert_eq!(stack.get_bounds(0), Some((0, 3)));
+        assert_eq!(stack.get_bounds(0), Some((0u32, 3u32)));
         assert_eq!(stack.get(1), None);
         assert_eq!(stack.get_bounds(1), None);
 
@@ -165,9 +170,9 @@ mod tests {
         assert!(!stack.is_empty());
         assert_eq!(stack.get_top(), Some("456"));
         assert_eq!(stack.get(0), Some("123"));
-        assert_eq!(stack.get_bounds(0), Some((0, 3)));
+        assert_eq!(stack.get_bounds(0), Some((0u32, 3u32)));
         assert_eq!(stack.get(1), Some("456"));
-        assert_eq!(stack.get_bounds(1), Some((3, 6)));
+        assert_eq!(stack.get_bounds(1), Some((3u32, 6u32)));
         assert_eq!(stack.get(2), None);
         assert_eq!(stack.get_bounds(2), None);
     }
@@ -270,9 +275,9 @@ mod tests {
         assert_eq!(stack.get(1), Some("a"));
         assert_eq!(stack.get(2), Some("😊"));
 
-        assert_eq!(stack.get_bounds(0), Some((0, 3)));
-        assert_eq!(stack.get_bounds(1), Some((3, 4)));
-        assert_eq!(stack.get_bounds(2), Some((4, 8)));
+        assert_eq!(stack.get_bounds(0), Some((0u32, 3u32)));
+        assert_eq!(stack.get_bounds(1), Some((3u32, 4u32)));
+        assert_eq!(stack.get_bounds(2), Some((4u32, 8u32)));
     }
 
     #[test]

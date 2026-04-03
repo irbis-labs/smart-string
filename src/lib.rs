@@ -34,5 +34,6 @@ pub use crate::display_ext::DisplayExt;
 pub use crate::pascal_string::PascalString;
 pub use crate::smart_string::IntoChars;
 pub use crate::smart_string::SmartString;
+pub use crate::smart_string::Utf16DecodeError;
 pub use crate::str_stack::StrStack;
 pub use crate::str_stack::StrStackIter;

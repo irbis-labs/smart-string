@@ -85,9 +85,7 @@ impl<const N: usize> SmartString<N> {
     /// When MSRV is bumped to a version where `String::try_with_capacity` is available, this should
     /// be revisited for closer upstream parity and to reduce “looks like a copy/paste bug” risk.
     #[inline]
-    pub fn try_with_capacity(
-        capacity: usize,
-    ) -> Result<Self, std::collections::TryReserveError> {
+    pub fn try_with_capacity(capacity: usize) -> Result<Self, std::collections::TryReserveError> {
         if capacity <= N {
             return Ok(Self::new());
         }
@@ -394,9 +392,7 @@ impl<const N: usize> SmartString<N> {
             Self::Heap(s) => s.insert(idx, ch),
             Self::Stack(s) => match s.try_insert(idx, ch) {
                 Ok(()) => (),
-                Err(pascal_string::InsertError::TooLong) => {
-                    self.ensure_heap_mut().insert(idx, ch)
-                }
+                Err(pascal_string::InsertError::TooLong) => self.ensure_heap_mut().insert(idx, ch),
                 Err(_) => panic!("invalid index or char boundary"),
             },
         }
@@ -574,10 +570,7 @@ impl<const N: usize> SmartString<N> {
             start <= end,
             "extend_from_within: start ({start}) > end ({end})"
         );
-        assert!(
-            end <= len,
-            "extend_from_within: end ({end}) > len ({len})"
-        );
+        assert!(end <= len, "extend_from_within: end ({end}) > len ({len})");
         let s = self.as_str();
         assert!(
             s.is_char_boundary(start),
@@ -736,8 +729,7 @@ fn decode_utf16_bytes<const N: usize>(
                 let low = to_u16([v[(i + 1) * 2], v[(i + 1) * 2 + 1]]);
                 if (0xDC00..=0xDFFF).contains(&low) {
                     // Valid surrogate pair.
-                    let cp =
-                        0x10000 + ((code_unit as u32 - 0xD800) << 10) + (low as u32 - 0xDC00);
+                    let cp = 0x10000 + ((code_unit as u32 - 0xD800) << 10) + (low as u32 - 0xDC00);
                     if let Some(ch) = char::from_u32(cp) {
                         buf.push(ch);
                     } else if lossy {

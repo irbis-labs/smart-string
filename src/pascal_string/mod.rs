@@ -17,11 +17,11 @@ mod error;
 #[cfg(feature = "serde")]
 mod with_serde;
 
-pub use error::TryFromBytesError;
 pub use error::InsertError;
 pub use error::RemoveError;
 pub use error::ReplaceRangeError;
 pub use error::SplitOffError;
+pub use error::TryFromBytesError;
 pub use error::TryFromStrError;
 
 #[derive(Clone, Copy)]
@@ -33,11 +33,7 @@ pub struct PascalString<const CAPACITY: usize> {
 
 impl<const CAPACITY: usize> PascalString<CAPACITY> {
     #[inline]
-    fn validate_range_bounds(
-        &self,
-        start: usize,
-        end: usize,
-    ) -> Result<(), ReplaceRangeError> {
+    fn validate_range_bounds(&self, start: usize, end: usize) -> Result<(), ReplaceRangeError> {
         let len = self.len();
         if start > end || end > len {
             return Err(ReplaceRangeError::OutOfBounds { start, end, len });
@@ -257,7 +253,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     }
 
     #[inline(always)]
-    #[deprecated(note = "Use `as_mut_str()` (this method name suggests `&mut str` but returns `&str`).")]
+    #[deprecated(
+        note = "Use `as_mut_str()` (this method name suggests `&mut str` but returns `&str`)."
+    )]
     pub fn as_str_mut(&mut self) -> &str {
         self
     }
@@ -287,7 +285,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     ///
     /// This mirrors `String::push_str`’s “cannot fail” ergonomics; use `try_push_str` if you want a recoverable error.
     #[inline]
-    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_push_str`, `push_str_truncated`, or `push_str_expect_capacity`.")]
+    #[deprecated(
+        note = "PascalString is fixed-capacity; prefer `try_push_str`, `push_str_truncated`, or `push_str_expect_capacity`."
+    )]
     pub fn push_str(&mut self, string: &str) {
         self.push_str_expect_capacity(string);
     }
@@ -296,7 +296,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     ///
     /// This mirrors `String::push`’s “cannot fail” ergonomics; use `try_push` if you want a recoverable error.
     #[inline]
-    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_push`, `push_str_truncated`, or `push_expect_capacity`.")]
+    #[deprecated(
+        note = "PascalString is fixed-capacity; prefer `try_push`, `push_str_truncated`, or `push_expect_capacity`."
+    )]
     pub fn push(&mut self, ch: char) {
         self.push_expect_capacity(ch);
     }
@@ -401,7 +403,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
 
     /// Inserts a string slice at the given byte index, panicking if the capacity would be exceeded.
     #[inline]
-    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_insert_str`, `try_insert_str_truncated`, or `insert_str_expect_capacity`.")]
+    #[deprecated(
+        note = "PascalString is fixed-capacity; prefer `try_insert_str`, `try_insert_str_truncated`, or `insert_str_expect_capacity`."
+    )]
     pub fn insert_str(&mut self, idx: usize, string: &str) {
         self.insert_str_expect_capacity(idx, string);
     }
@@ -425,7 +429,9 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
 
     /// Inserts a character at the given byte index, panicking if the capacity would be exceeded.
     #[inline]
-    #[deprecated(note = "PascalString is fixed-capacity; prefer `try_insert`, `try_insert_str_truncated`, or `insert_expect_capacity`.")]
+    #[deprecated(
+        note = "PascalString is fixed-capacity; prefer `try_insert`, `try_insert_str_truncated`, or `insert_expect_capacity`."
+    )]
     pub fn insert(&mut self, idx: usize, ch: char) {
         self.insert_expect_capacity(idx, ch);
     }

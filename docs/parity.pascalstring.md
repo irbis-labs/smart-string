@@ -51,7 +51,7 @@ Notes:
 | `push` | 🚫 | — | `try_push`, `push_expect_capacity`, `push_str_truncated` (for strings) | 🟡 |
 | `push_str` | 🚫 | — | `try_push_str`, `push_str_truncated`, `push_str_expect_capacity` | 🟡 |
 | `remove` | ✅ | `remove` *(panicking on invalid idx/boundary like `String`)* | `try_remove` (non-panicking) | 🟡 |
-| `remove_matches` | 🚫 | — | *(could be `retain(|c| ...)`-style equivalent)* | ❌ |
+| `remove_matches` | 🚫 | — | `remove_matches(&str)` *(in-place scan+compact; `retain` covers char-level filtering)* | 🟡 |
 | `replace_first` | 🚫 | — | *(could be implemented on `&str` output; may need truncation APIs)* | ❌ |
 | `replace_last` | 🚫 | — | — | ❌ |
 | `replace_range` | 🚫 | — | `try_replace_range_bounds`, `try_replace_range_bounds_truncated`, `replace_range_bounds_expect_capacity` | 🟡 |
@@ -60,7 +60,7 @@ Notes:
 | `retain` | ✅ | `retain` | — | ✅ |
 | `shrink_to` | 🚫 | — | *(no-op for fixed-capacity)* | ❌ |
 | `shrink_to_fit` | 🚫 | — | *(no-op for fixed-capacity)* | ❌ |
-| `split_off` | 🚫 | — | *(could be implemented as `try_split_off` returning two PascalStrings when both fit)* | ❌ |
+| `split_off` | 🚫 | — | `split_off(at)` panicking + `try_split_off(at)` non-panicking | 🟡 |
 | `truncate` | ✅ | `truncate` *(requires char boundary, panics like `String` on invalid boundary)* | — | ✅ |
 | `try_reserve` | 🚫 | — | *(could return Ok if fits, Err otherwise; not present)* | ❌ |
 | `try_reserve_exact` | 🚫 | — | — | ❌ |

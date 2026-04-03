@@ -40,7 +40,7 @@ show up hot in profiling, we should document the cost model and optimize where p
   - [x] `fmt::Write`
   - [x] `Add`, `AddAssign`
   - [x] `Extend<&char>`, `Extend<&String>`
-  - [ ] `IntoIterator` (over chars/bytes?) — decide ergonomics vs `Deref<str>` sufficiency
+  - [x] `into_chars` (custom `IntoChars<N>` iterator; `IntoIterator` trait deferred until `String` stabilizes it)
 
 - **PascalString**
   - [x] `Deref<Target=str>`, `DerefMut`
@@ -66,7 +66,12 @@ show up hot in profiling, we should document the cost model and optimize where p
   - [x] `drain` (promotes to heap and delegates)
   - [x] `into_bytes`, `into_string` (consuming conversions)
   - [x] `into_boxed_str`, `leak`, `from_utf8_lossy`
-  - [ ] `as_mut_vec` (likely **out of scope**; would expose raw bytes and complicate UTF‑8 invariants)
+  - [x] `into_chars` (custom `IntoChars<N>` with full trait surface)
+  - [x] `extend_from_within` (safe: extract range + push_str)
+  - [x] `remove_matches` (accepts `&str`; also `remove_matches_char` for `char`)
+  - [x] `replace_first`, `replace_last` (accepts `&str` + char variants; via `replace_range`)
+  - [x] `from_utf16be`, `from_utf16be_lossy`, `from_utf16le`, `from_utf16le_lossy` (manual decode from `&[u8]`)
+  - [ ] `as_mut_vec` (**out of scope**; deferred to future `fragile` feature flag)
 
 - **PascalString**
   - [x] `len`, `is_empty`, `capacity`

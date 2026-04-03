@@ -26,14 +26,14 @@ Notes:
 | `capacity` | ✅ | `capacity` | — | ✅ |
 | `clear` | ✅ | `clear` | — | ✅ |
 | `drain` | ✅ | `drain` | *(currently promotes to heap and delegates)* | ✅ |
-| `extend_from_within` | ✅ | — | *(could be implemented by delegating on heap, or by stack-aware copy with promotion on overflow)* | ❌ |
+| `extend_from_within` | ✅ | `extend_from_within` | *(safe: extract range + push_str; promotes to heap on overflow)* | ✅ |
 | `from_raw_parts` | 🚫 | — | *(representation-exposing/unsafe; could exist only for heap variant)* | ❌ |
 | `from_utf16` | ✅ | `from_utf16` | — | ✅ |
 | `from_utf16_lossy` | ✅ | `from_utf16_lossy` | — | ✅ |
-| `from_utf16be` | ✅ | — | *(can be implemented by delegating to `String::from_utf16be`)* | ❌ |
-| `from_utf16be_lossy` | ✅ | — | *(can be implemented by delegating to `String::from_utf16be_lossy`)* | ❌ |
-| `from_utf16le` | ✅ | — | *(can be implemented by delegating to `String::from_utf16le`)* | ❌ |
-| `from_utf16le_lossy` | ✅ | — | *(can be implemented by delegating to `String::from_utf16le_lossy`)* | ❌ |
+| `from_utf16be` | ✅ | `from_utf16be` | *(manual UTF-16 BE decode from `&[u8]`; returns `Utf16DecodeError`)* | ✅ |
+| `from_utf16be_lossy` | ✅ | `from_utf16be_lossy` | *(lossy variant, replaces invalid with U+FFFD)* | ✅ |
+| `from_utf16le` | ✅ | `from_utf16le` | *(manual UTF-16 LE decode from `&[u8]`)* | ✅ |
+| `from_utf16le_lossy` | ✅ | `from_utf16le_lossy` | *(lossy variant)* | ✅ |
 | `from_utf8` | ✅ | `from_utf8` | — | ✅ |
 | `from_utf8_lossy` | ✅ | `from_utf8_lossy` | — | ✅ |
 | `from_utf8_lossy_owned` | ✅ | `from_utf8_lossy_owned` | — | ✅ |
@@ -42,7 +42,7 @@ Notes:
 | `insert_str` | ✅ | `insert_str` | `insert_str_truncated`, `try_insert_str_truncated` | ✅ |
 | `into_boxed_str` | ✅ | `into_boxed_str` | — | ✅ |
 | `into_bytes` | ✅ | `into_bytes` | `From<SmartString> for Vec<u8>` | ✅ |
-| `into_chars` | ✅ | — | *(can be implemented by delegating to `String::into_chars` on heap)* | ❌ |
+| `into_chars` | ✅ | `into_chars` | *(custom `IntoChars<N>` with full trait surface; no `IntoIterator` trait until std stabilizes it)* | ✅ |
 | `into_raw_parts` | 🚫 | — | *(representation-exposing/unsafe; could exist only for heap variant)* | ❌ |
 | `is_empty` | ✅ | `is_empty` | — | ✅ |
 | `leak` | ✅ | `leak` | — | ✅ |
@@ -52,9 +52,9 @@ Notes:
 | `push` | ✅ | `push` | — | ✅ |
 | `push_str` | ✅ | `push_str` | — | ✅ |
 | `remove` | ✅ | `remove` | — | ✅ |
-| `remove_matches` | ✅ | — | *(can be implemented by delegating to `String::remove_matches` on heap; stack path possible too)* | ❌ |
-| `replace_first` | ✅ | — | *(can be implemented by delegating to `String::replace_first` on heap)* | ❌ |
-| `replace_last` | ✅ | — | *(can be implemented by delegating to `String::replace_last` on heap)* | ❌ |
+| `remove_matches` | ✅ | `remove_matches` | *(accepts `&str`; also `remove_matches_char` for `char`)* | ✅ |
+| `replace_first` | ✅ | `replace_first` | *(accepts `&str`; also `replace_first_char` for `char`; via `replace_range`)* | ✅ |
+| `replace_last` | ✅ | `replace_last` | *(accepts `&str`; also `replace_last_char` for `char`; via `replace_range`)* | ✅ |
 | `replace_range` | ✅ | `replace_range` | — | ✅ |
 | `reserve` | ✅ | `reserve` | — | ✅ |
 | `reserve_exact` | ✅ | `reserve_exact` | — | ✅ |

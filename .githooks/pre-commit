@@ -7,4 +7,17 @@ if git diff --cached --name-only | grep -Eq '(^|/)Cargo\.lock$'; then
   exit 1
 fi
 
+# Only run heavy checks if Rust source files are staged.
+if ! git diff --cached --name-only | grep -qE '\.rs$|Cargo\.toml$'; then
+  exit 0
+fi
 
+# Format check (nightly rustfmt).
+if rustup run nightly rustfmt --version >/dev/null 2>&1; then
+  echo "pre-commit: checking formatting..."
+  cargo +nightly fmt --all -- --check
+fi
+
+# Clippy (stable, deny warnings).
+echo "pre-commit: running clippy..."
+cargo clippy --all-targets -- -D warnings

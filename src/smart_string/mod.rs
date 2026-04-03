@@ -353,6 +353,11 @@ impl<const N: usize> SmartString<N> {
         self.into_string().into_boxed_str()
     }
 
+    /// Consumes the `SmartString` and leaks it, returning a `&'static mut str`.
+    ///
+    /// Available on Rust 1.72+ (`String::leak` stabilization). On older compilers this
+    /// method is silently absent, preserving the crate's MSRV of 1.59.
+    #[rustversion::since(1.72)]
     #[inline]
     #[must_use]
     pub fn leak<'a>(self) -> &'a mut str {
@@ -558,7 +563,9 @@ impl<const N: usize> SmartString<N> {
         let len = self.len();
         let start = match src.start_bound() {
             Bound::Included(&n) => n,
-            Bound::Excluded(&n) => n.checked_add(1).expect("extend_from_within: start overflow"),
+            Bound::Excluded(&n) => n
+                .checked_add(1)
+                .expect("extend_from_within: start overflow"),
             Bound::Unbounded => 0,
         };
         let end = match src.end_bound() {
@@ -1525,6 +1532,7 @@ mod tests {
         assert_eq!(&*boxed, "ab");
     }
 
+    #[rustversion::since(1.72)]
     #[test]
     fn test_leak() {
         let leaked: &'static mut str = SmartString::<4>::from("ab").leak();

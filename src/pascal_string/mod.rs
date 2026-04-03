@@ -590,7 +590,6 @@ impl<const CAPACITY: usize> PascalString<CAPACITY> {
     ///
     /// Returns `Err(SplitOffError)` if `at > self.len()` or `at` is not on a char boundary.
     #[inline]
-    #[must_use]
     pub fn try_split_off(&mut self, at: usize) -> Result<PascalString<CAPACITY>, SplitOffError> {
         let len = self.len();
         if at > len {
@@ -1167,14 +1166,14 @@ mod tests {
     #[should_panic]
     fn test_split_off_panics_on_non_char_boundary() {
         let mut ps = PascalString::<8>::try_from("€ab").unwrap();
-        ps.split_off(1); // mid of 3-byte '€'
+        let _ = ps.split_off(1); // mid of 3-byte '€'
     }
 
     #[test]
     #[should_panic]
     fn test_split_off_panics_at_gt_len() {
         let mut ps = PascalString::<8>::try_from("abc").unwrap();
-        ps.split_off(10);
+        let _ = ps.split_off(10);
     }
 
     // -- try_split_off ---------------------------------------------------------------------------

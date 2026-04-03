@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "pre-push: running tests..."
+cargo test --quiet
+
+# MSRV check is CI-only: cargo 1.59 can't resolve dev-deps (proptest) from
+# the local registry index, and stable cargo + MSRV rustc fails on
+# split-debuginfo. CI handles this in a clean environment.
+
+echo "pre-push: running Miri..."
+if rustup run nightly cargo miri --version >/dev/null 2>&1; then
+  MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" \
+    cargo +nightly miri test --quiet
+else
+  echo "  skipped (miri not installed; run: rustup component add --toolchain nightly miri)"
+fi
+
+echo "pre-push: all checks passed"

@@ -1818,4 +1818,214 @@ mod tests {
         let heap = SmartString::<4>::from_utf16be(&long_bytes).unwrap();
         assert!(heap.is_heap());
     }
+
+    // -- extend_from_within tests -------------------------------------------------------------------
+
+    #[test]
+    fn test_extend_from_within_stack() {
+        let mut s = SmartString::<10>::from("abc");
+        s.extend_from_within(0..2);
+        assert_eq!(s.as_str(), "abcab");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_extend_from_within_promotes_to_heap() {
+        let mut s = SmartString::<4>::from("abc");
+        s.extend_from_within(..); // "abcabc" = 6 bytes > 4
+        assert_eq!(s.as_str(), "abcabc");
+        assert!(s.is_heap());
+    }
+
+    #[test]
+    fn test_extend_from_within_heap() {
+        let mut s = SmartString::<2>::from("hello");
+        assert!(s.is_heap());
+        s.extend_from_within(1..3);
+        assert_eq!(s.as_str(), "helloel");
+    }
+
+    #[test]
+    fn test_extend_from_within_empty_range() {
+        let mut s = SmartString::<10>::from("abc");
+        s.extend_from_within(1..1);
+        assert_eq!(s.as_str(), "abc");
+    }
+
+    #[test]
+    fn test_extend_from_within_full_range() {
+        let mut s = SmartString::<10>::from("ab");
+        s.extend_from_within(..);
+        assert_eq!(s.as_str(), "abab");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_extend_from_within_non_char_boundary() {
+        let mut s = SmartString::<10>::from("a€b"); // € is 3 bytes
+        s.extend_from_within(1..3); // mid-€ boundaries
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_extend_from_within_out_of_bounds() {
+        let mut s = SmartString::<10>::from("abc");
+        s.extend_from_within(0..10);
+    }
+
+    // -- remove_matches tests -----------------------------------------------------------------------
+
+    #[test]
+    fn test_remove_matches_stack_single() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.remove_matches("b");
+        assert_eq!(s.as_str(), "acac");
+    }
+
+    #[test]
+    fn test_remove_matches_stack_multiple() {
+        let mut s = SmartString::<20>::from("aXbXcX");
+        s.remove_matches("X");
+        assert_eq!(s.as_str(), "abc");
+    }
+
+    #[test]
+    fn test_remove_matches_no_match() {
+        let mut s = SmartString::<10>::from("hello");
+        s.remove_matches("xyz");
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_remove_matches_empty_pattern() {
+        let mut s = SmartString::<10>::from("hello");
+        s.remove_matches("");
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_remove_matches_entire_string() {
+        let mut s = SmartString::<10>::from("aaa");
+        s.remove_matches("aaa");
+        assert_eq!(s.as_str(), "");
+    }
+
+    #[test]
+    fn test_remove_matches_heap() {
+        let mut s = SmartString::<2>::from("hello world");
+        assert!(s.is_heap());
+        s.remove_matches("o");
+        assert_eq!(s.as_str(), "hell wrld");
+    }
+
+    #[test]
+    fn test_remove_matches_multibyte() {
+        let mut s = SmartString::<20>::from("a€b€c");
+        s.remove_matches("€");
+        assert_eq!(s.as_str(), "abc");
+    }
+
+    #[test]
+    fn test_remove_matches_char_variant() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.remove_matches_char('b');
+        assert_eq!(s.as_str(), "acac");
+    }
+
+    // -- replace_first / replace_last tests ---------------------------------------------------------
+
+    #[test]
+    fn test_replace_first_same_length() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.replace_first("b", "X");
+        assert_eq!(s.as_str(), "aXcabc");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_replace_first_shorter() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.replace_first("bc", "Z");
+        assert_eq!(s.as_str(), "aZabc");
+    }
+
+    #[test]
+    fn test_replace_first_longer_fits_stack() {
+        let mut s = SmartString::<20>::from("abcabc");
+        s.replace_first("b", "XYZ");
+        assert_eq!(s.as_str(), "aXYZcabc");
+        assert!(s.is_stack());
+    }
+
+    #[test]
+    fn test_replace_first_longer_promotes_to_heap() {
+        let mut s = SmartString::<4>::from("abc");
+        s.replace_first("b", "XXXX"); // "aXXXXc" = 6 > 4
+        assert_eq!(s.as_str(), "aXXXXc");
+        assert!(s.is_heap());
+    }
+
+    #[test]
+    fn test_replace_first_no_match() {
+        let mut s = SmartString::<10>::from("hello");
+        s.replace_first("xyz", "!");
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_replace_last_gets_last() {
+        let mut s = SmartString::<10>::from("abcabc");
+        s.replace_last("b", "X");
+        assert_eq!(s.as_str(), "abcaXc");
+    }
+
+    #[test]
+    fn test_replace_first_vs_last() {
+        let mut s1 = SmartString::<20>::from("aXbXcXd");
+        let mut s2 = s1.clone();
+        s1.replace_first("X", ".");
+        s2.replace_last("X", ".");
+        assert_eq!(s1.as_str(), "a.bXcXd");
+        assert_eq!(s2.as_str(), "aXbXc.d");
+    }
+
+    #[test]
+    fn test_replace_first_at_boundaries() {
+        let mut s = SmartString::<10>::from("abc");
+        s.replace_first("a", "X");
+        assert_eq!(s.as_str(), "Xbc");
+
+        let mut s = SmartString::<10>::from("abc");
+        s.replace_first("c", "X");
+        assert_eq!(s.as_str(), "abX");
+    }
+
+    #[test]
+    fn test_replace_first_char_variant() {
+        let mut s = SmartString::<10>::from("a€b€c");
+        s.replace_first_char('€', "X");
+        assert_eq!(s.as_str(), "aXb€c");
+    }
+
+    #[test]
+    fn test_replace_last_char_variant() {
+        let mut s = SmartString::<10>::from("a€b€c");
+        s.replace_last_char('€', "X");
+        assert_eq!(s.as_str(), "a€bXc");
+    }
+
+    #[test]
+    fn test_from_utf16_stack_aware() {
+        // "Hi" = 2 bytes UTF-8, should land on stack with capacity 4
+        let s = SmartString::<4>::from_utf16(&[0x48u16, 0x69]).unwrap();
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "Hi");
+    }
+
+    #[test]
+    fn test_from_utf16_lossy_stack_aware() {
+        let s = SmartString::<4>::from_utf16_lossy(&[0x48u16, 0x69]);
+        assert!(s.is_stack());
+        assert_eq!(s.as_str(), "Hi");
+    }
 }

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-04-03
+
+### Added
+
+- **StrStack ergonomics**: `with_capacity`, `bytes_len`, `reserve_items`, `reserve_bytes`, `last`, `truncate`, `try_push`, `clear` (was private, now public).
+- **Checkpoint/rollback**: `Checkpoint` type, `StrStack::checkpoint()` and `StrStack::reset()` for speculative parsing with cheap rollback.
+- **StrList**: frozen (immutable) string list backed by `Box<[u8]>` + `Box<[u32]>`. Constructed via `From<StrStack>` or `FromIterator<&str>`. Serde support (serialize/deserialize as sequence of strings).
+- **StrListRef**: borrowed read-only view over `&[u8]` + `&[u32]` with validated construction (`StrListRef::new`). Zero-copy views over external buffers (e.g., memory-mapped files).
+- **StrListValidationError**: error type for `StrListRef::new` with variants for boundary and UTF-8 violations.
+- **StrStackOverflow**: error type for `try_push` when total byte length would exceed `u32::MAX`.
+- **StrListIter**: iterator for `StrList`/`StrListRef` with `DoubleEndedIterator`, `ExactSizeIterator`, `FusedIterator`.
+- `DoubleEndedIterator` and `FusedIterator` for `StrStackIter`.
+- Module-level rustdoc for `str_stack`: representation model, invariants, complexity table, usage example.
+
+### Changed
+
+- **Breaking**: `StrStack` boundary table migrated from `Vec<usize>` to `Vec<u32>`. Halves boundary memory on 64-bit platforms. Total content limited to ~4 GB.
+- **Breaking**: `StrStack::get_bounds()` now returns `Option<(u32, u32)>` instead of `Option<(usize, usize)>`.
+- `StrStackIter` refactored from cursor-based to index-based to support `DoubleEndedIterator`.
+
 ## [0.2.3] - 2026-04-03
 
 ### Added

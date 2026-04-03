@@ -4,7 +4,9 @@
 //!
 //! - [`PascalString`]: fixed-capacity UTF-8 string stored inline (stack / in-place).
 //! - [`SmartString`]: stack-or-heap string that promotes to heap when needed.
-//! - [`StrStack`]: a compact “stack” of string slices backed by a single byte buffer.
+//! - [`StrStack`]: mutable builder for a compact list of string segments in a single byte buffer.
+//! - [`StrList`]: frozen (immutable) string list with no excess capacity.
+//! - [`StrListRef`]: borrowed read-only view over string list data (zero-copy).
 //!
 //! ## Notes
 //!
@@ -37,5 +39,11 @@ pub use crate::pascal_string::PascalString;
 pub use crate::smart_string::IntoChars;
 pub use crate::smart_string::SmartString;
 pub use crate::smart_string::Utf16DecodeError;
+pub use crate::str_stack::Checkpoint;
+pub use crate::str_stack::StrList;
+pub use crate::str_stack::StrListIter;
+pub use crate::str_stack::StrListRef;
+pub use crate::str_stack::StrListValidationError;
 pub use crate::str_stack::StrStack;
 pub use crate::str_stack::StrStackIter;
+pub use crate::str_stack::StrStackOverflow;

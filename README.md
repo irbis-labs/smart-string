@@ -19,7 +19,7 @@ Currently, Smart String is in active development, and its API might undergo chan
 tried-and-true patterns from earlier works, the library as a standalone entity is relatively new. Hence, it's advised to
 use it with caution and feel free to provide feedback, report issues, or suggest improvements.
 
-The library has 195 tests covering core behavior, edge cases, and UTF-8/UTF-16 boundary conditions, including property-based tests (`proptest`) for UTF-16 decode and Miri CI for undefined behavior detection.
+The library has 247 tests covering core behavior, edge cases, and UTF-8/UTF-16 boundary conditions, including property-based tests (`proptest`) for UTF-16 decode and Miri CI for undefined behavior detection.
 
 ## Features
 
@@ -58,10 +58,12 @@ In CI we run an MSRV job that compiles with `rustc 1.59.0`. If MSRV breaks due t
 
 ## Roadmap
 
+### Shipped
+
+- ~~`StringsStack`~~: Shipped in v0.3.0 as `StrStack` (mutable builder) + `StrList` (frozen) + `StrListRef` (borrowed view). Includes checkpoint/rollback for speculative parsing.
+
 ### Primary Goals
 
-- `StringsStack`: A dedicated storage solution for multiple strings, allowing them to be housed within a single
-  allocation.
 - `StringsSet`: A storage medium designed for strings, facilitating both consolidated allocation and utilization
   as a hash set.
 

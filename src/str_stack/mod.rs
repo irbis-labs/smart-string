@@ -1,21 +1,128 @@
+//! A compact string collection backed by a single contiguous byte buffer.
+//!
+//! # Types
+//!
+//! - [`StrStack`]: mutable builder — push, pop, checkpoint/rollback, random access.
+//! - [`StrList`]: frozen immutable list (`Box<[u8]>` + `Box<[u32]>`), no excess capacity.
+//! - [`StrListRef`]: borrowed read-only view (`&[u8]` + `&[u32]`), zero-copy over external buffers.
+//!
+//! # Representation
+//!
+//! All types share the same logical structure:
+//! - `data`: a contiguous UTF-8 byte buffer containing all segments concatenated.
+//! - `ends`: a `u32` boundary table where `ends[i]` is the byte offset of the end of segment `i`.
+//!   Segment `i` occupies `data[ends[i-1]..ends[i]]` (with `ends[-1] = 0`).
+//!
+//! # Invariants (soundness-critical)
+//!
+//! - `data` is always valid UTF-8.
+//! - `ends` values are monotonically non-decreasing.
+//! - The last value in `ends` does not exceed `data.len()`.
+//!
+//! These invariants are maintained by construction (`push` only accepts `&str`)
+//! and by validation (`StrListRef::new` checks all three).
+//!
+//! # Limits
+//!
+//! The boundary table uses `u32`, limiting total content to ~4 GB.
+//! [`push`](StrStack::push) panics if this limit is exceeded;
+//! [`try_push`](StrStack::try_push) returns an error instead.
+//!
+//! # Complexity
+//!
+//! | Operation | Time | Notes |
+//! |-----------|------|-------|
+//! | `push` | O(n) | n = length of pushed string (byte copy) |
+//! | `get(i)` | O(1) | boundary lookup + slice projection |
+//! | `remove_top` | O(1) | amortized (truncates vecs) |
+//! | `checkpoint` | O(1) | captures two lengths |
+//! | `reset` | O(1) | amortized (truncates vecs) |
+//! | `truncate(k)` | O(1) | amortized |
+//! | `iter` | O(n) | n = number of segments |
+//! | `From<StrStack> for StrList` | O(n) | n = total bytes (box slice copy) |
+//!
+//! # Example
+//!
+//! ```
+//! use smart_string::StrStack;
+//!
+//! let mut stack = StrStack::new();
+//! stack.push("hello");
+//! stack.push("world");
+//!
+//! assert_eq!(stack.get(0), Some("hello"));
+//! assert_eq!(stack.last(), Some("world"));
+//! assert_eq!(stack.as_str(), "helloworld");
+//!
+//! // Checkpoint for speculative parsing
+//! let cp = stack.checkpoint();
+//! stack.push("tentative");
+//! stack.reset(cp); // rolls back "tentative"
+//! assert_eq!(stack.len(), 2);
+//! ```
+
+use std::fmt;
 use std::str::from_utf8_unchecked;
 
 mod iter;
+pub mod str_list;
+pub mod str_list_ref;
 #[cfg(feature = "serde")]
 mod with_serde;
 
 pub use iter::StrStackIter;
+pub use str_list::StrList;
+pub use str_list::StrListIter;
+pub use str_list_ref::StrListRef;
+pub use str_list_ref::StrListValidationError;
+
+/// A lightweight snapshot of `StrStack` state for checkpoint/rollback.
+///
+/// Created by [`StrStack::checkpoint`], consumed by [`StrStack::reset`].
+/// Fields are private to preserve the invariant that `bytes` always points
+/// to a valid UTF-8 boundary within `data`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Checkpoint {
+    items: u32,
+    bytes: u32,
+}
+
+/// Error returned by [`StrStack::try_push`] when the total byte length would exceed `u32::MAX`.
+#[derive(Debug, Clone)]
+pub struct StrStackOverflow {
+    attempted: usize,
+}
+
+impl fmt::Display for StrStackOverflow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "StrStack overflow: attempted total byte length {} exceeds u32::MAX",
+            self.attempted
+        )
+    }
+}
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct StrStack {
     data: Vec<u8>,
-    ends: Vec<usize>,
+    ends: Vec<u32>,
 }
 
 impl StrStack {
     #[inline]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new `StrStack` with pre-allocated capacity for `items` string segments
+    /// and `bytes` total bytes of string data.
+    #[inline]
+    pub fn with_capacity(items: usize, bytes: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(bytes),
+            ends: Vec::with_capacity(items),
+        }
     }
 
     #[inline]
@@ -26,6 +133,28 @@ impl StrStack {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.ends.is_empty()
+    }
+
+    /// Returns the total byte length of the data buffer.
+    ///
+    /// Returns `u32` to match the internal boundary representation,
+    /// making the 4 GB limit explicit at the call site.
+    #[inline]
+    pub fn bytes_len(&self) -> u32 {
+        // `push` guarantees `self.data.len() <= u32::MAX`, so this cast is safe.
+        self.data.len() as u32
+    }
+
+    /// Reserves capacity for at least `additional` more string segments.
+    #[inline]
+    pub fn reserve_items(&mut self, additional: usize) {
+        self.ends.reserve(additional);
+    }
+
+    /// Reserves capacity for at least `additional` more bytes of string data.
+    #[inline]
+    pub fn reserve_bytes(&mut self, additional: usize) {
+        self.data.reserve(additional);
     }
 
     #[inline]
@@ -40,7 +169,7 @@ impl StrStack {
         let (begin, end) = self.get_bounds(index)?;
         // SAFETY: `get_bounds` ensures `begin <= end <= self.data.len()`, and the stack stores only UTF-8 segments
         // pushed via `push(&str)`.
-        Some(unsafe { self.get_unchecked_internal(begin, end) })
+        Some(unsafe { self.get_unchecked_internal(begin as usize, end as usize) })
     }
 
     #[inline]
@@ -72,7 +201,7 @@ impl StrStack {
     }
 
     #[inline]
-    pub fn get_bounds(&self, index: usize) -> Option<(usize, usize)> {
+    pub fn get_bounds(&self, index: usize) -> Option<(u32, u32)> {
         if index + 1 > self.ends.len() {
             return None;
         }
@@ -82,7 +211,7 @@ impl StrStack {
             (0, self.ends[0])
         };
         debug_assert!(start <= end);
-        debug_assert!(end <= self.data.len());
+        debug_assert!((end as usize) <= self.data.len());
         Some((start, end))
     }
 
@@ -94,10 +223,18 @@ impl StrStack {
         }
     }
 
+    /// Returns the last (topmost) string segment, or `None` if empty.
+    ///
+    /// Alias for [`get_top`](Self::get_top).
+    #[inline]
+    pub fn last(&self) -> Option<&str> {
+        self.get_top()
+    }
+
     #[inline]
     pub fn remove_top(&mut self) -> Option<()> {
         self.ends.pop()?;
-        let end = self.ends.last().copied().unwrap_or(0);
+        let end = self.ends.last().copied().unwrap_or(0) as usize;
         self.data.truncate(end);
         Some(())
     }
@@ -115,18 +252,100 @@ impl StrStack {
     #[inline]
     pub fn push(&mut self, s: &str) {
         self.data.extend_from_slice(s.as_bytes());
-        self.ends.push(self.data.len());
+        let new_end: u32 = self
+            .data
+            .len()
+            .try_into()
+            .expect("StrStack: total byte length exceeds u32::MAX");
+        self.ends.push(new_end);
     }
 
+    /// Fallible push: appends a string segment, returning `Err` if the total byte
+    /// length would exceed `u32::MAX`.
     #[inline]
-    fn clear(&mut self) {
+    pub fn try_push(&mut self, s: &str) -> Result<(), StrStackOverflow> {
+        let new_len = self.data.len() + s.len();
+        let new_end: u32 = new_len
+            .try_into()
+            .map_err(|_| StrStackOverflow { attempted: new_len })?;
+        self.data.extend_from_slice(s.as_bytes());
+        self.ends.push(new_end);
+        Ok(())
+    }
+
+    /// Removes all string segments, resetting the stack to empty.
+    ///
+    /// Does not release allocated memory (use `shrink_to_fit` on the underlying
+    /// vecs if needed — not yet exposed).
+    #[inline]
+    pub fn clear(&mut self) {
         self.data.clear();
         self.ends.clear();
+    }
+
+    /// Keeps the first `len` string segments and removes the rest.
+    ///
+    /// If `len >= self.len()`, this is a no-op (matches [`Vec::truncate`] semantics).
+    #[inline]
+    pub fn truncate(&mut self, len: usize) {
+        if len >= self.ends.len() {
+            return;
+        }
+        self.ends.truncate(len);
+        let byte_end = self.ends.last().copied().unwrap_or(0) as usize;
+        self.data.truncate(byte_end);
+    }
+
+    /// Captures a lightweight checkpoint of the current stack state.
+    ///
+    /// The checkpoint can later be passed to [`reset`](Self::reset) to roll back
+    /// any segments pushed after this point. Useful for speculative parsing:
+    /// push tokens tentatively, then either commit (by discarding the checkpoint)
+    /// or roll back (by calling `reset`).
+    #[inline]
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            items: self.ends.len() as u32,
+            bytes: self.data.len() as u32,
+        }
+    }
+
+    /// Rolls the stack back to a previously captured [`Checkpoint`].
+    ///
+    /// Removes all segments pushed after the checkpoint was taken.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the checkpoint is invalid (its item count or byte count exceeds
+    /// the current stack state). This can happen if the checkpoint was created from
+    /// a different `StrStack`, or if the stack was reset to an earlier checkpoint
+    /// after this one was taken.
+    #[inline]
+    pub fn reset(&mut self, cp: Checkpoint) {
+        assert!(
+            cp.items as usize <= self.ends.len() && cp.bytes as usize <= self.data.len(),
+            "StrStack::reset: invalid checkpoint (items: {}, bytes: {}) for stack (items: {}, bytes: {})",
+            cp.items, cp.bytes, self.ends.len(), self.data.len()
+        );
+        self.ends.truncate(cp.items as usize);
+        self.data.truncate(cp.bytes as usize);
     }
 
     #[inline]
     pub fn iter(&self) -> StrStackIter<'_> {
         StrStackIter::new(self)
+    }
+
+    /// Internal: borrow the raw data buffer.
+    #[inline]
+    pub(crate) fn data_as_slice(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// Internal: borrow the raw ends buffer.
+    #[inline]
+    pub(crate) fn ends_as_slice(&self) -> &[u32] {
+        &self.ends
     }
 }
 
@@ -156,7 +375,7 @@ mod tests {
         assert!(!stack.is_empty());
         assert_eq!(stack.get_top(), Some("123"));
         assert_eq!(stack.get(0), Some("123"));
-        assert_eq!(stack.get_bounds(0), Some((0, 3)));
+        assert_eq!(stack.get_bounds(0), Some((0u32, 3u32)));
         assert_eq!(stack.get(1), None);
         assert_eq!(stack.get_bounds(1), None);
 
@@ -165,9 +384,9 @@ mod tests {
         assert!(!stack.is_empty());
         assert_eq!(stack.get_top(), Some("456"));
         assert_eq!(stack.get(0), Some("123"));
-        assert_eq!(stack.get_bounds(0), Some((0, 3)));
+        assert_eq!(stack.get_bounds(0), Some((0u32, 3u32)));
         assert_eq!(stack.get(1), Some("456"));
-        assert_eq!(stack.get_bounds(1), Some((3, 6)));
+        assert_eq!(stack.get_bounds(1), Some((3u32, 6u32)));
         assert_eq!(stack.get(2), None);
         assert_eq!(stack.get_bounds(2), None);
     }
@@ -270,9 +489,9 @@ mod tests {
         assert_eq!(stack.get(1), Some("a"));
         assert_eq!(stack.get(2), Some("😊"));
 
-        assert_eq!(stack.get_bounds(0), Some((0, 3)));
-        assert_eq!(stack.get_bounds(1), Some((3, 4)));
-        assert_eq!(stack.get_bounds(2), Some((4, 8)));
+        assert_eq!(stack.get_bounds(0), Some((0u32, 3u32)));
+        assert_eq!(stack.get_bounds(1), Some((3u32, 4u32)));
+        assert_eq!(stack.get_bounds(2), Some((4u32, 8u32)));
     }
 
     #[test]
@@ -419,5 +638,278 @@ mod tests {
 
         let collected: Vec<&str> = stack.iter().collect();
         assert_eq!(collected, vec!["", "abc", ""]);
+    }
+
+    // -- ergonomics APIs (v0.3) -----------------------------------------------------------------------
+
+    #[test]
+    fn test_with_capacity() {
+        let stack = StrStack::with_capacity(10, 100);
+        assert_eq!(stack.len(), 0);
+        assert!(stack.is_empty());
+    }
+
+    #[test]
+    fn test_bytes_len() {
+        let mut stack = StrStack::new();
+        assert_eq!(stack.bytes_len(), 0);
+        stack.push("abc"); // 3 bytes
+        assert_eq!(stack.bytes_len(), 3);
+        stack.push("€"); // 3 bytes
+        assert_eq!(stack.bytes_len(), 6);
+        stack.push("😊"); // 4 bytes
+        assert_eq!(stack.bytes_len(), 10);
+    }
+
+    #[test]
+    fn test_last() {
+        let mut stack = StrStack::new();
+        assert_eq!(stack.last(), None);
+        stack.push("first");
+        assert_eq!(stack.last(), Some("first"));
+        stack.push("second");
+        assert_eq!(stack.last(), Some("second"));
+        // last() and get_top() return the same value
+        assert_eq!(stack.last(), stack.get_top());
+    }
+
+    #[test]
+    fn test_clear_public() {
+        let mut stack = StrStack::new();
+        stack.push("hello");
+        stack.push("world");
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.bytes_len(), 10);
+
+        stack.clear();
+        assert!(stack.is_empty());
+        assert_eq!(stack.len(), 0);
+        assert_eq!(stack.bytes_len(), 0);
+        assert_eq!(stack.as_str(), "");
+
+        // Can push again after clear
+        stack.push("new");
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("new"));
+    }
+
+    #[test]
+    fn test_truncate() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+        stack.push("ccc");
+        stack.push("ddd");
+        assert_eq!(stack.len(), 4);
+
+        // Truncate to 2 items
+        stack.truncate(2);
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get(0), Some("aaa"));
+        assert_eq!(stack.get(1), Some("bbb"));
+        assert_eq!(stack.get(2), None);
+        assert_eq!(stack.as_str(), "aaabbb");
+    }
+
+    #[test]
+    fn test_truncate_noop() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+
+        // Truncate to >= len is a no-op
+        stack.truncate(5);
+        assert_eq!(stack.len(), 2);
+        stack.truncate(2);
+        assert_eq!(stack.len(), 2);
+    }
+
+    #[test]
+    fn test_truncate_to_zero() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+
+        stack.truncate(0);
+        assert!(stack.is_empty());
+        assert_eq!(stack.as_str(), "");
+    }
+
+    #[test]
+    fn test_truncate_unicode() {
+        let mut stack = StrStack::new();
+        stack.push("你好"); // 6 bytes
+        stack.push("世界"); // 6 bytes
+        stack.push("🦀"); // 4 bytes
+
+        stack.truncate(1);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("你好"));
+        assert_eq!(stack.bytes_len(), 6);
+    }
+
+    #[test]
+    fn test_try_push_success() {
+        let mut stack = StrStack::new();
+        assert!(stack.try_push("hello").is_ok());
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("hello"));
+    }
+
+    #[test]
+    fn test_reserve() {
+        let mut stack = StrStack::new();
+        stack.reserve_items(10);
+        stack.reserve_bytes(100);
+        // Reserving doesn't change length
+        assert_eq!(stack.len(), 0);
+        assert!(stack.is_empty());
+        // But we can push without reallocation
+        for i in 0..10 {
+            stack.push(&format!("{}", i));
+        }
+        assert_eq!(stack.len(), 10);
+    }
+
+    // -- checkpoint/rollback (v0.3) -------------------------------------------------------------------
+
+    #[test]
+    fn test_checkpoint_basic() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+        let cp = stack.checkpoint();
+
+        stack.push("ccc");
+        stack.push("ddd");
+        assert_eq!(stack.len(), 4);
+
+        stack.reset(cp);
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get(0), Some("aaa"));
+        assert_eq!(stack.get(1), Some("bbb"));
+        assert_eq!(stack.get(2), None);
+        assert_eq!(stack.as_str(), "aaabbb");
+    }
+
+    #[test]
+    fn test_checkpoint_empty_stack() {
+        let mut stack = StrStack::new();
+        let cp = stack.checkpoint();
+
+        stack.push("aaa");
+        stack.push("bbb");
+        assert_eq!(stack.len(), 2);
+
+        stack.reset(cp);
+        assert!(stack.is_empty());
+        assert_eq!(stack.as_str(), "");
+    }
+
+    #[test]
+    fn test_checkpoint_at_end_is_noop() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+        let cp = stack.checkpoint();
+
+        // Reset immediately without pushing anything
+        stack.reset(cp);
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get(0), Some("aaa"));
+        assert_eq!(stack.get(1), Some("bbb"));
+    }
+
+    #[test]
+    fn test_checkpoint_nested() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        let cp1 = stack.checkpoint();
+
+        stack.push("bbb");
+        let cp2 = stack.checkpoint();
+
+        stack.push("ccc");
+        assert_eq!(stack.len(), 3);
+
+        // Roll back to cp2 (keeps aaa, bbb)
+        stack.reset(cp2);
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.last(), Some("bbb"));
+
+        // Roll back to cp1 (keeps only aaa)
+        stack.reset(cp1);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.last(), Some("aaa"));
+    }
+
+    #[test]
+    fn test_checkpoint_unicode() {
+        let mut stack = StrStack::new();
+        stack.push("你好"); // 6 bytes
+        let cp = stack.checkpoint();
+
+        stack.push("😊"); // 4 bytes
+        stack.push("🦀"); // 4 bytes
+        assert_eq!(stack.bytes_len(), 14);
+
+        stack.reset(cp);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("你好"));
+        assert_eq!(stack.bytes_len(), 6);
+    }
+
+    #[test]
+    fn test_checkpoint_then_push_after_reset() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        let cp = stack.checkpoint();
+
+        stack.push("bbb");
+        stack.reset(cp);
+
+        // Push new data after rollback
+        stack.push("ccc");
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get(0), Some("aaa"));
+        assert_eq!(stack.get(1), Some("ccc"));
+        assert_eq!(stack.as_str(), "aaaccc");
+    }
+
+    #[test]
+    fn test_truncate_preserves_earlier_checkpoint() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        let cp = stack.checkpoint();
+
+        stack.push("bbb");
+        stack.push("ccc");
+        stack.push("ddd");
+
+        // Truncate to 3 items (removes ddd)
+        stack.truncate(3);
+        assert_eq!(stack.len(), 3);
+
+        // cp was taken at 1 item, still valid
+        stack.reset(cp);
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0), Some("aaa"));
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid checkpoint")]
+    fn test_reset_stale_checkpoint_panics() {
+        let mut stack = StrStack::new();
+        stack.push("aaa");
+        stack.push("bbb");
+        stack.push("ccc");
+        let cp_late = stack.checkpoint(); // at 3 items, 9 bytes
+
+        // Truncate to 0 — now cp_late is stale
+        stack.truncate(0);
+        assert!(stack.is_empty());
+
+        // cp_late says 3 items / 9 bytes, stack has 0 / 0 — should panic
+        stack.reset(cp_late);
     }
 }

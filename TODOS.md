@@ -61,3 +61,13 @@
 **Context:** Parity table marks `try_reserve` as 🚫 for PascalString. Raised during eng review (2026-04-02).
 
 **Depends on:** Nothing specific.
+
+---
+
+## Research: cargo audit value for library crates
+
+**What:** Investigate whether `cargo audit` in CI provides meaningful value for library crates with minimal dependency surfaces (2 runtime deps).
+
+**Why:** Currently skipped — `serde` and `rustversion` vulnerabilities would be global news, not caught by our CI first. But the question deserves a proper answer: at what dependency count / risk profile does it become worth the CI time?
+
+**Context:** Raised during v0.3.0 pre-release audit (2026-04-04). Deferred as low priority.

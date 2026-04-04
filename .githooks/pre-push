@@ -8,6 +8,9 @@ cargo test --quiet
 # the local registry index, and stable cargo + MSRV rustc fails on
 # split-debuginfo. CI handles this in a clean environment.
 
+echo "pre-push: checking rustdoc..."
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --quiet
+
 echo "pre-push: running Miri..."
 if rustup run nightly cargo miri --version >/dev/null 2>&1; then
   MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" \

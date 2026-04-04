@@ -65,8 +65,8 @@ use std::fmt;
 use std::str::from_utf8_unchecked;
 
 mod iter;
-pub mod str_list;
-pub mod str_list_ref;
+mod str_list;
+mod str_list_ref;
 #[cfg(feature = "serde")]
 mod with_serde;
 

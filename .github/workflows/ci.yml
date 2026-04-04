@@ -43,6 +43,10 @@ jobs:
         run: cargo test
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings
+      - name: cargo doc (warn = error)
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   miri:
     name: miri (UB detection)

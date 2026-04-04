@@ -5,7 +5,7 @@ use core::fmt;
 /// This is a crate-local equivalent of `std::string::FromUtf16Error`, which cannot be
 /// constructed outside of std.
 ///
-/// Returned by [`SmartString::from_utf16be`], [`SmartString::from_utf16le`], and their variants.
+/// Returned by [`super::SmartString::from_utf16be`], [`super::SmartString::from_utf16le`], and their variants.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Utf16DecodeError {
     _private: (),
